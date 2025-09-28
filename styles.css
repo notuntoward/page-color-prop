@@ -1,0 +1,6 @@
+/* Page Color Prop Plugin - Minimal CSS */
+/* Background applied only to main container, all content transparent */
+
+.page-color-prop-active {
+  transition: background-color 0.2s ease-in-out;
+}

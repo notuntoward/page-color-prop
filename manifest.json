@@ -1,0 +1,11 @@
+{
+  "id": "page-color-prop",
+  "name": "Page Color Prop",
+  "version": "1.2.3",
+  "minAppVersion": "0.15.0",
+  "description": "Color note page backgrounds based on file properties. Fixed minimal CSS approach.",
+  "author": "Your Name",
+  "authorUrl": "https://github.com/your-username",
+  "fundingUrl": "https://buymeacoffee.com/your-username",
+  "isDesktopOnly": false
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+.env
+data.json
+main.js
+*.js.map
