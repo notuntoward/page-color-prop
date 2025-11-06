@@ -2,493 +2,492 @@ import { App, PluginSettingTab, Setting } from 'obsidian';
 import PageColorPropPlugin from './main';
 
 export interface PropertyColorMapping {
-  property: string;
-  value: string;
-  color: string;
-  matchType: 'exact' | 'contains';
+	property: string;
+	value: string;
+	colorLight: string;
+	colorDark: string;
+	isAutoLight: boolean;
+	isAutoDark: boolean;
+	matchType: 'exact' | 'contains';
 }
 
 export interface PageColorPropSettings {
-  colorMappings: PropertyColorMapping[];
+	colorMappings: PropertyColorMapping[];
 }
 
+// EMPTY defaults - no example mappings!
 export const DEFAULT_SETTINGS: PageColorPropSettings = {
-  colorMappings: [
-    {
-      property: 'status',
-      value: 'completed',
-      color: '#90EE90',
-      matchType: 'exact'
-    },
-    {
-      property: 'tags',
-      value: 'urgent',
-      color: 'rgba(255, 0, 0, 0.1)',
-      matchType: 'contains'
-    }
-  ]
+	colorMappings: []
 };
 
 export class PageColorPropSettingTab extends PluginSettingTab {
-  plugin: PageColorPropPlugin;
+	plugin: PageColorPropPlugin;
+	private styleEl: HTMLStyleElement | null = null;
 
-  constructor(app: App, plugin: PageColorPropPlugin) {
-    super(app, plugin);
-    this.plugin = plugin;
-  }
+	constructor(app: App, plugin: PageColorPropPlugin) {
+		super(app, plugin);
+		this.plugin = plugin;
+	}
 
-  display(): void {
-    const { containerEl } = this;
-    containerEl.empty();
+	display(): void {
+		const { containerEl } = this;
+		containerEl.empty();
+		this.addZoomResponsiveStyles();
 
-    this.addZoomResponsiveStyles();
+		containerEl.createEl('h2', { text: 'Page Color Prop Settings' });
+		containerEl.createEl('p', {
+			text: 'Color note backgrounds based on frontmatter properties. Configure property-to-color mappings below.',
+			cls: 'page-color-prop-description'
+		});
 
-    containerEl.createEl('h2', { text: 'Page Color Prop Settings' });
-    containerEl.createEl('p', { 
-      text: 'Color note backgrounds based on frontmatter properties. Configure property-to-color mappings below.',
-      cls: 'page-color-prop-description'
-    });
+		new Setting(containerEl)
+			.setName('Add Color Mapping')
+			.setDesc('Create a new property-to-color mapping')
+			.addButton(button => {
+				button
+					.setButtonText('+ Add New Mapping')
+					.setCta()
+					.onClick(async () => {
+						this.plugin.settings.colorMappings.push({
+							property: '',
+							value: '',
+							colorLight: 'hsla(var(--accent-h), var(--accent-s), 90%, 0.35)',
+							colorDark: 'hsla(var(--accent-h), var(--accent-s), 25%, 0.30)',
+							isAutoLight: true,
+							isAutoDark: true,
+							matchType: 'exact'
+						});
+						await this.plugin.saveSettings();
+						this.display();
+					});
+			});
 
-    new Setting(containerEl)
-      .setName('Add Color Mapping')
-      .setDesc('Create a new property-to-color mapping')
-      .addButton(button => {
-        button
-          .setButtonText('+ Add New Mapping')
-          .setCta()
-          .onClick(() => {
-            this.plugin.settings.colorMappings.push({
-              property: '',
-              value: '',
-              color: '#ffffff',
-              matchType: 'exact'
-            });
-            this.plugin.saveSettings();
-            this.display();
-          });
-      });
+		if (this.plugin.settings.colorMappings.length > 0) {
+			const mappingsTitle = containerEl.createEl('h3', {
+				text: `Color Mappings (${this.plugin.settings.colorMappings.length})`,
+				cls: 'page-color-prop-section-title'
+			});
 
-    if (this.plugin.settings.colorMappings.length > 0) {
-      const mappingsTitle = containerEl.createEl('h3', { 
-        text: `Color Mappings (${this.plugin.settings.colorMappings.length})`,
-        cls: 'page-color-prop-section-title'
-      });
+			this.plugin.settings.colorMappings.forEach((mapping, index) => {
+				this.createMappingSettings(containerEl, mapping, index);
+			});
 
-      this.plugin.settings.colorMappings.forEach((mapping, index) => {
-        this.createMappingSettings(containerEl, mapping, index);
-      });
+			new Setting(containerEl)
+				.setName('Clear All Mappings')
+				.setDesc('Remove all color mappings (cannot be undone)')
+				.addButton(button => {
+					button
+						.setButtonText('Clear All')
+						.setWarning()
+						.onClick(async () => {
+							const confirmClearAll = confirm(
+								`Delete all ${this.plugin.settings.colorMappings.length} color mappings?\n\nThis action cannot be undone.`
+							);
+							if (confirmClearAll) {
+								this.plugin.settings.colorMappings = [];
+								await this.plugin.saveSettings();
+								this.display();
+							}
+						});
+				});
+		} else {
+			const emptyState = containerEl.createDiv('page-color-prop-empty-state');
+			emptyState.innerHTML = `
+Click "Add New Mapping" above to create your first property-to-color mapping.
 
-      new Setting(containerEl)
-        .setName('Clear All Mappings')
-        .setDesc('Remove all color mappings (cannot be undone)')
-        .addButton(button => {
-          button
-            .setButtonText('Clear All')
-            .setWarning()
-            .onClick(async () => {
-              const confirmClearAll = confirm(`Delete all ${this.plugin.settings.colorMappings.length} color mappings?\n\nThis action cannot be undone.`);
-              if (confirmClearAll) {
-                this.plugin.settings.colorMappings = [];
-                await this.plugin.saveSettings();
-                this.display();
-              }
-            });
-        });
-    } else {
-      const emptyState = containerEl.createDiv('page-color-prop-empty-state');
-      emptyState.innerHTML = `
-        <div class="empty-state-content">
-          <h3>No Color Mappings Yet</h3>
-          <p>Click "Add New Mapping" above to create your first property-to-color mapping.</p>
-          <p><strong>Example:</strong> Map <code>status: completed</code> to a green background</p>
-        </div>
-      `;
-    }
+<strong>Example:</strong> Map <code>tags: ai-generated</code> to a tinted background
 
-    this.createHelpSection(containerEl);
-  }
+<strong>Property:</strong> <code>tags</code><br>
+<strong>Value:</strong> <code>ai-generated</code><br>
+<strong>Light Theme:</strong> Auto (theme-aware)<br>
+<strong>Dark Theme:</strong> Auto (theme-aware)<br>
+<strong>Match Type:</strong> Contains<br>
 
-  private createMappingSettings(container: HTMLElement, mapping: PropertyColorMapping, index: number) {
-    const card = container.createDiv('page-color-prop-card');
+<strong>Result:</strong> Notes with the tag <code>ai-generated</code> will have a subtle tinted background that adapts to your theme
 
-    const header = card.createDiv('card-header');
-    header.createEl('h4', { text: `Mapping ${index + 1}`, cls: 'card-title' });
+<strong>Supported Color Formats for Manual Mode:</strong><br>
+<code>#FF5733</code>, <code>#123ABC</code><br>
+<code>rgb(255, 87, 51)</code>, <code>rgba(255, 87, 51, 0.5)</code><br>
+<code>red</code>, <code>blue</code>, <code>lightgreen</code>
+`;
+		}
+	}
 
-    const deleteBtn = header.createEl('button', { 
-      text: '×', 
-      cls: 'card-delete-btn',
-      attr: { 'aria-label': 'Delete mapping' }
-    });
-    deleteBtn.addEventListener('click', async () => {
-      const propertyDisplay = mapping.property || 'empty';
-      const valueDisplay = mapping.value || 'empty';
-      const confirmDelete = confirm(`Delete this mapping?\n\nProperty: "${propertyDisplay}"\nValue: "${valueDisplay}"`);
-      if (confirmDelete) {
-        this.plugin.settings.colorMappings.splice(index, 1);
-        await this.plugin.saveSettings();
-        this.display();
-      }
-    });
+	onunload(): void {
+		if (this.styleEl) {
+			this.styleEl.remove();
+			this.styleEl = null;
+		}
+	}
 
-    new Setting(card)
-      .setName('Property')
-      .setDesc('The property name to check (e.g., "status", "tags", "project")')
-      .addText(text => {
-        text
-          .setPlaceholder('e.g., status, tags, project')
-          .setValue(mapping.property)
-          .onChange(async (value) => {
-            mapping.property = value;
-            await this.plugin.saveSettings();
-          });
-      });
+	private createMappingSettings(containerEl: HTMLElement, mapping: PropertyColorMapping, index: number) {
+		const mappingCard = containerEl.createDiv('page-color-prop-mapping-card');
 
-    new Setting(card)
-      .setName('Value')
-      .setDesc('The value to match against')
-      .addText(text => {
-        text
-          .setPlaceholder('e.g., completed, urgent')
-          .setValue(mapping.value)
-          .onChange(async (value) => {
-            mapping.value = value;
-            await this.plugin.saveSettings();
-          });
-      });
+		new Setting(mappingCard)
+			.setName('Property')
+			.setDesc('Frontmatter property name (e.g., status, tags, priority)')
+			.addText(text => {
+				text.setValue(mapping.property || '').onChange(value => {
+					mapping.property = value;
+					this.plugin.saveSettings();
+				});
+				text.inputEl.disabled = false;
+			});
 
-    new Setting(card)
-      .setName('Match Type')
-      .setDesc('How to match the value: "exact" for single values, "contains" for arrays')
-      .addDropdown(dropdown => {
-        dropdown
-          .addOption('exact', 'Exact Match')
-          .addOption('contains', 'Contains (for arrays)')
-          .setValue(mapping.matchType)
-          .onChange(async (value: 'exact' | 'contains') => {
-            mapping.matchType = value;
-            await this.plugin.saveSettings();
-          });
-      });
+		new Setting(mappingCard)
+			.setName('Value')
+			.setDesc('Property value to match (e.g., completed, urgent, high)')
+			.addText(text => {
+				text.setValue(mapping.value || '').onChange(value => {
+					mapping.value = value;
+					this.plugin.saveSettings();
+				});
+				text.inputEl.disabled = false;
+			});
 
-    const colorSetting = new Setting(card)
-      .setName('Background Color')
-      .setDesc('CSS color value (hex, rgba, color name, or CSS variable)')
-      .addText(text => {
-        text
-          .setPlaceholder('#ffffff or rgba(255,255,255,0.1)')
-          .setValue(mapping.color)
-          .onChange(async (value) => {
-            mapping.color = value;
-            await this.plugin.saveSettings();
-            this.updateColorPreview(colorPreview, value);
-          });
-      });
+		new Setting(mappingCard)
+			.setName('Match Type')
+			.setDesc('Exact match or contains (for arrays like tags)')
+			.addDropdown(dropdown => {
+				dropdown
+					.addOption('exact', 'Exact Match')
+					.addOption('contains', 'Contains')
+					.setValue(mapping.matchType || 'exact')
+					.onChange(value => {
+						mapping.matchType = value as 'exact' | 'contains';
+						this.plugin.saveSettings();
+					});
+			});
 
-    const colorPreview = colorSetting.controlEl.createDiv('color-preview');
-    colorPreview.style.backgroundColor = mapping.color;
+		// Light Theme Color Setting
+		this.createThemeColorSetting(
+			mappingCard,
+			'Light Theme Background',
+			'Color for light-mode backgrounds',
+			mapping,
+			'Light'
+		);
 
-    const testColorBtn = colorSetting.controlEl.createEl('button', { 
-      text: 'Test',
-      cls: 'test-color-btn'
-    });
-    testColorBtn.addEventListener('click', () => {
-      this.testColor(mapping.color);
-    });
+		// Dark Theme Color Setting
+		this.createThemeColorSetting(
+			mappingCard,
+			'Dark Theme Background',
+			'Color for dark-mode backgrounds',
+			mapping,
+			'Dark'
+		);
 
-    const actionsSetting = new Setting(card)
-      .setName('Actions')
-      .setDesc('Move, duplicate, or remove this mapping');
+		new Setting(mappingCard)
+			.addButton(button => {
+				button.setButtonText('🔄 Duplicate').onClick(async () => {
+					this.plugin.settings.colorMappings.splice(index + 1, 0, {
+						...JSON.parse(JSON.stringify(mapping))
+					});
+					await this.plugin.saveSettings();
+					this.display();
+				});
+			})
+			.addButton(button => {
+				button
+					.setButtonText('↑ Up')
+					.setDisabled(index === 0)
+					.onClick(async () => {
+						if (index > 0) {
+							[this.plugin.settings.colorMappings[index], this.plugin.settings.colorMappings[index - 1]] = [
+								this.plugin.settings.colorMappings[index - 1],
+								this.plugin.settings.colorMappings[index]
+							];
+							await this.plugin.saveSettings();
+							this.display();
+						}
+					});
+			})
+			.addButton(button => {
+				button
+					.setButtonText('↓ Down')
+					.setDisabled(index === this.plugin.settings.colorMappings.length - 1)
+					.onClick(async () => {
+						if (index < this.plugin.settings.colorMappings.length - 1) {
+							[this.plugin.settings.colorMappings[index], this.plugin.settings.colorMappings[index + 1]] = [
+								this.plugin.settings.colorMappings[index + 1],
+								this.plugin.settings.colorMappings[index]
+							];
+							await this.plugin.saveSettings();
+							this.display();
+						}
+					});
+			})
+			.addButton(button => {
+				button
+					.setButtonText('🗑️ Delete')
+					.setWarning()
+					.onClick(async () => {
+						this.plugin.settings.colorMappings.splice(index, 1);
+						await this.plugin.saveSettings();
+						this.display();
+					});
+			});
+	}
 
-    if (index > 0) {
-      actionsSetting.addButton(button => {
-        button
-          .setButtonText('↑ Up')
-          .onClick(async () => {
-            const temp = this.plugin.settings.colorMappings[index - 1];
-            this.plugin.settings.colorMappings[index - 1] = this.plugin.settings.colorMappings[index];
-            this.plugin.settings.colorMappings[index] = temp;
-            await this.plugin.saveSettings();
-            this.display();
-          });
-      });
-    }
+	private createThemeColorSetting(
+		containerEl: HTMLElement,
+		name: string,
+		desc: string,
+		mapping: PropertyColorMapping,
+		themeType: 'Light' | 'Dark'
+	) {
+		const isLight = themeType === 'Light';
+		const autoDefault = isLight
+			? 'hsla(var(--accent-h), var(--accent-s), 90%, 0.35)'
+			: 'hsla(var(--accent-h), var(--accent-s), 25%, 0.30)';
 
-    if (index < this.plugin.settings.colorMappings.length - 1) {
-      actionsSetting.addButton(button => {
-        button
-          .setButtonText('↓ Down')
-          .onClick(async () => {
-            const temp = this.plugin.settings.colorMappings[index + 1];
-            this.plugin.settings.colorMappings[index + 1] = this.plugin.settings.colorMappings[index];
-            this.plugin.settings.colorMappings[index] = temp;
-            await this.plugin.saveSettings();
-            this.display();
-          });
-      });
-    }
+		// Create a container for this color setting - divider will be above this
+		const colorSettingContainer = containerEl.createDiv('page-color-prop-color-setting-container');
+		
+		const settingEl = new Setting(colorSettingContainer);
+		settingEl.setName(name);
+		settingEl.setDesc(desc);
 
-    actionsSetting.addButton(button => {
-      button
-        .setButtonText('📋 Duplicate')
-        .onClick(async () => {
-          const duplicatedMapping = { 
-            ...mapping,
-            property: mapping.property + '_copy'
-          };
-          this.plugin.settings.colorMappings.splice(index + 1, 0, duplicatedMapping);
-          await this.plugin.saveSettings();
-          this.display();
-        });
-    });
+		// Get current state
+		const getIsAuto = () => isLight ? mapping.isAutoLight : mapping.isAutoDark;
+		const getColor = () => isLight ? mapping.colorLight : mapping.colorDark;
+		const setIsAuto = (value: boolean) => {
+			if (isLight) {
+				mapping.isAutoLight = value;
+			} else {
+				mapping.isAutoDark = value;
+			}
+		};
+		const setColor = (value: string) => {
+			if (isLight) {
+				mapping.colorLight = value;
+			} else {
+				mapping.colorDark = value;
+			}
+		};
 
-    actionsSetting.addButton(button => {
-      button
-        .setButtonText('🗑️ Remove')
-        .setWarning()
-        .onClick(async () => {
-          if (confirm(`Delete mapping for "${mapping.property}: ${mapping.value}"?`)) {
-            this.plugin.settings.colorMappings.splice(index, 1);
-            await this.plugin.saveSettings();
-            this.display();
-          }
-        });
-    });
-  }
+		const isAuto = getIsAuto();
 
-  private updateColorPreview(previewEl: HTMLElement, color: string) {
-    previewEl.style.backgroundColor = color;
-  }
+		// Color sample display (BEFORE the setting controls)
+		const colorDisplay = colorSettingContainer.createDiv('page-color-prop-color-display');
+		const sampleBox = colorDisplay.createDiv('page-color-prop-sample-box');
+		const currentColor = getColor();
+		const displayColor = this.resolveColorForDisplay(isAuto ? autoDefault : currentColor);
+		sampleBox.style.backgroundColor = displayColor;
+		
+		const modeLabel = colorDisplay.createDiv('page-color-prop-mode-label');
+		modeLabel.setText(isAuto ? 'Auto (from theme)' : `Manual`);
 
-  private createHelpSection(container: HTMLElement) {
-    const helpContainer = container.createDiv('page-color-prop-help');
+		// Toggle button
+		settingEl.addButton(button => {
+			button
+				.setButtonText(isAuto ? 'Switch to Manual' : 'Switch to Auto')
+				.onClick(async () => {
+					const wasAuto = getIsAuto();
+					if (isLight) {
+						mapping.isAutoLight = !mapping.isAutoLight;
+					} else {
+						mapping.isAutoDark = !mapping.isAutoDark;
+					}
+					
+					// If switching to auto, reset to default
+					if ((isLight && mapping.isAutoLight) || (!isLight && mapping.isAutoDark)) {
+						setColor(autoDefault);
+					}
+					
+					await this.plugin.saveSettings();
+					this.plugin.applyColorToActiveFile();
+					
+					// If we just switched from auto to manual, open the color picker
+					if (wasAuto && !getIsAuto()) {
+						// Redraw to show color picker, then click it
+						this.display();
+						// Find and click the color picker that was just created
+						setTimeout(() => {
+							const colorInputs = document.querySelectorAll('input[type="color"]');
+							if (colorInputs.length > 0) {
+								const lastColorInput = colorInputs[colorInputs.length - 1] as HTMLInputElement;
+								lastColorInput.click();
+							}
+						}, 50);
+					} else {
+						this.display(); // Redraw to show/hide color picker
+					}
+				});
+		});
 
-    helpContainer.createEl('h3', { text: 'How to Use' });
+		// Color picker (only show if manual mode)
+		if (!isAuto) {
+			settingEl.addColorPicker(colorPicker => {
+				const currentColor = getColor();
+				const pickerColor = this.resolveColorForPicker(currentColor);
+				
+				colorPicker
+					.setValue(pickerColor)
+					.onChange(value => {
+						// **FIX**: Update UI *first* in case saving fails
+						sampleBox.style.backgroundColor = value;
+						modeLabel.setText(`Manual`);
+						
+						// Then update data and save
+						setColor(value);
+						this.plugin.saveSettings();
+						this.plugin.applyColorToActiveFile();
+					});
+			});
+		}
+	}
 
-    const exampleSection = helpContainer.createDiv();
-    exampleSection.innerHTML = `
-      <h4>Example Setup</h4>
-      <div class="example-card">
-        <p><strong>Property:</strong> <code>status</code></p>
-        <p><strong>Value:</strong> <code>completed</code></p>
-        <p><strong>Color:</strong> <code>#90EE90</code></p>
-        <p><strong>Match Type:</strong> Exact Match</p>
-        <p><strong>Result:</strong> Notes with <code>status: completed</code> will have a light green background</p>
-      </div>
-    `;
+	private resolveColorForPicker(color: string): string {
+		// Null/undefined check
+		if (!color || typeof color !== 'string') {
+			return '#808080';
+		}
 
-    const colorFormats = helpContainer.createDiv();
-    colorFormats.innerHTML = `
-      <h4>Supported Color Formats</h4>
-      <ul>
-        <li><strong>Hex codes:</strong> <code>#FF5733</code>, <code>#123ABC</code></li>
-        <li><strong>RGB/RGBA:</strong> <code>rgb(255, 87, 51)</code>, <code>rgba(255, 87, 51, 0.5)</code></li>
-        <li><strong>Color names:</strong> <code>red</code>, <code>blue</code>, <code>lightgreen</code></li>
-      </ul>
-    `;
-  }
+		// If it's already a hex color, return it
+		const hexMatch = color.match(/#[0-9A-Fa-f]{6}/);
+		if (hexMatch) return hexMatch[0];
 
-  private addZoomResponsiveStyles() {
-    const styleEl = document.createElement('style');
-    styleEl.textContent = `
-      .page-color-prop-description {
-        color: var(--text-muted);
-        margin-bottom: 1.25rem;
-      }
+		// If it contains CSS variables, compute the actual color
+		if (color.includes('var(--')) {
+			return this.computeColorFromThemeVars(color);
+		}
 
-      .page-color-prop-section-title {
-        margin: 1.875rem 0 1.25rem 0;
-        color: var(--text-accent);
-        border-bottom: 1px solid var(--background-modifier-border);
-        padding-bottom: 0.5rem;
-      }
+		// Try to convert rgb/rgba to hex
+		const rgbMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+		if (rgbMatch) {
+			const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0');
+			const g = parseInt(rgbMatch[2]).toString(16).padStart(2, '0');
+			const b = parseInt(rgbMatch[3]).toString(16).padStart(2, '0');
+			return `#${r}${g}${b}`;
+		}
 
-      .page-color-prop-card {
-        border: 1px solid var(--background-modifier-border);
-        border-radius: 0.5rem;
-        margin-bottom: 1.25rem;
-        background-color: var(--background-primary);
-        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.1);
-        padding: 0;
-      }
+		// Default to a neutral color
+		return '#808080';
+	}
 
-      .card-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1rem 1.25rem;
-        background-color: var(--background-secondary);
-        border-bottom: 1px solid var(--background-modifier-border);
-        border-radius: 0.5rem 0.5rem 0 0;
-      }
+	private resolveColorForDisplay(color: string): string {
+		// For display, we want the actual CSS value to use theme variables if present
+		// But computed for preview
+		if (!color || typeof color !== 'string') {
+			return '#808080';
+		}
 
-      .card-title {
-        font-weight: 600;
-        color: var(--text-normal);
-        margin: 0;
-      }
+		// If it contains CSS variables, compute the actual color for display
+		if (color.includes('var(--')) {
+			return this.computeColorFromThemeVars(color);
+		}
 
-      .card-delete-btn {
-        background: var(--interactive-accent);
-        color: var(--text-on-accent);
-        border: none;
-        border-radius: 0.25rem;
-        width: 1.5rem;
-        height: 1.5rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        font-size: 1.125rem;
-        font-weight: bold;
-      }
+		// Otherwise return as-is (hex, rgb, or color name)
+		return color;
+	}
 
-      .card-delete-btn:hover {
-        background: var(--interactive-accent-hover);
-      }
+	private computeColorFromThemeVars(colorStr: string): string {
+		// Create a temporary element to compute the color
+		const temp = document.createElement('div');
+		temp.style.color = colorStr;
+		document.body.appendChild(temp);
+		
+		const computed = window.getComputedStyle(temp).color;
+		document.body.removeChild(temp);
 
-      .color-preview {
-        width: 2rem;
-        height: 2rem;
-        border: 1px solid var(--background-modifier-border);
-        border-radius: 0.25rem;
-        cursor: pointer;
-        flex-shrink: 0;
-        margin-left: 0.5rem;
-        display: inline-block;
-      }
+		// Parse the computed rgb/rgba and convert to hex
+		const rgbMatch = computed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+		if (rgbMatch) {
+			const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0');
+			const g = parseInt(rgbMatch[2]).toString(16).padStart(2, '0');
+			const b = parseInt(rgbMatch[3]).toString(16).padStart(2, '0');
+			return `#${r}${g}${b}`;
+		}
 
-      .test-color-btn {
-        padding: 0.25rem 0.5rem;
-        background: var(--interactive-normal);
-        color: var(--text-normal);
-        border: 1px solid var(--background-modifier-border);
-        border-radius: 0.25rem;
-        cursor: pointer;
-        font-size: 0.75rem;
-        margin-left: 0.5rem;
-      }
+		return '#808080';
+	}
 
-      .test-color-btn:hover {
-        background: var(--interactive-hover);
-      }
+	private addZoomResponsiveStyles() {
+		// Remove old style if it exists
+		if (this.styleEl) {
+			this.styleEl.remove();
+		}
 
-      .page-color-prop-empty-state {
-        text-align: center;
-        padding: 2.5rem 1.25rem;
-        background-color: var(--background-secondary);
-        border-radius: 0.5rem;
-        margin: 1.25rem 0;
-      }
-
-      .empty-state-content h3 {
-        color: var(--text-normal);
-        margin-bottom: 1rem;
-      }
-
-      .empty-state-content p {
-        color: var(--text-muted);
-        margin-bottom: 0.75rem;
-      }
-
-      .page-color-prop-help {
-        margin-top: 2.5rem;
-        padding: 1.25rem;
-        background-color: var(--background-secondary);
-        border-radius: 0.5rem;
-        border-left: 0.25rem solid var(--interactive-accent);
-      }
-
-      .page-color-prop-help h3,
-      .page-color-prop-help h4 {
-        color: var(--text-normal);
-        margin-bottom: 1rem;
-      }
-
-      .example-card {
-        background-color: var(--background-primary);
-        border: 1px solid var(--background-modifier-border);
-        border-radius: 0.375rem;
-        padding: 1rem;
-        margin-bottom: 1rem;
-      }
-
-      .example-card p {
-        margin: 0.5rem 0;
-        color: var(--text-normal);
-      }
-
-      .example-card code {
-        background-color: var(--background-modifier-form-field);
-        padding: 0.125rem 0.375rem;
-        border-radius: 0.1875rem;
-        font-family: var(--font-monospace);
-        color: var(--text-accent);
-      }
-
-      .page-color-prop-help ul {
-        margin-left: 1.25rem;
-      }
-
-      .page-color-prop-help li {
-        margin-bottom: 0.5rem;
-        color: var(--text-normal);
-      }
-
-      .page-color-prop-card input[type="text"],
-      .page-color-prop-card select {
-        font-size: 0.875rem !important;
-        padding: 0.5rem 0.75rem !important;
-        min-height: 2.25rem !important;
-        line-height: 1.4 !important;
-      }
-
-      .page-color-prop-card select {
-        line-height: 1.2 !important;
-      }
-    `;
-
-    document.head.appendChild(styleEl);
-  }
-
-  private testColor(color: string) {
-    const testEl = document.createElement('div');
-    testEl.style.cssText = `
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 18.75rem;
-      height: 9.375rem;
-      background-color: ${color};
-      border: 0.125rem solid var(--text-normal);
-      border-radius: 0.5rem;
-      z-index: 1000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--text-normal);
-      font-size: 1rem;
-      cursor: pointer;
-      box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.3);
-      backdrop-filter: blur(0.25rem);
-    `;
-    testEl.innerHTML = `
-      <div style="text-align: center; background: rgba(0, 0, 0, 0.8); padding: 0.75rem; border-radius: 0.375rem; color: white;">
-        <div>Color Preview</div>
-        <div style="font-size: 0.75rem; margin-top: 0.25rem; opacity: 0.8;">Click to close</div>
-      </div>
-    `;
-
-    testEl.addEventListener('click', () => {
-      testEl.remove();
-    });
-
-    document.body.appendChild(testEl);
-
-    setTimeout(() => {
-      if (testEl.parentNode) {
-        testEl.remove();
-      }
-    }, 4000);
-  }
+		// Create NEW style element scoped to this plugin only
+		this.styleEl = document.createElement('style');
+		this.styleEl.setAttribute('data-plugin', 'page-color-prop');
+		
+		this.styleEl.textContent = `
+			/* Page Color Prop plugin styles - scoped carefully */
+			.page-color-prop-mapping-card {
+				border: 1px solid var(--background-modifier-border);
+				border-radius: 4px;
+				padding: 16px;
+				margin-bottom: 16px;
+				background-color: var(--background-secondary);
+			}
+			
+			.page-color-prop-section-title {
+				margin-top: 24px;
+				margin-bottom: 16px;
+				font-weight: 600;
+			}
+			
+			.page-color-prop-description {
+				margin-bottom: 24px;
+				color: var(--text-muted);
+				font-size: 14px;
+			}
+			
+			.page-color-prop-empty-state {
+				padding: 24px;
+				border: 1px dashed var(--background-modifier-border);
+				border-radius: 4px;
+				background-color: var(--background-secondary);
+				font-size: 14px;
+				color: var(--text-muted);
+				line-height: 1.6;
+			}
+			
+			.page-color-prop-color-setting-container {
+				border-top: 1px solid var(--background-modifier-border);
+				padding-top: 16px;
+				margin-top: 16px;
+			}
+			
+			.page-color-prop-color-display {
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				padding: 0 0 12px 0;
+				margin-bottom: 8px;
+			}
+			
+			.page-color-prop-sample-box {
+				width: 50px;
+				height: 50px;
+				border-radius: 4px;
+				border: 2px solid var(--background-modifier-border);
+				box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
+				flex-shrink: 0;
+			}
+			
+			.page-color-prop-mode-label {
+				font-size: 13px;
+				color: var(--text-normal);
+				font-weight: 500;
+				flex: 1;
+			}
+			
+			@media (max-width: 768px) {
+				.page-color-prop-mapping-card {
+					padding: 12px;
+					margin-bottom: 12px;
+				}
+				
+				.page-color-prop-sample-box {
+					width: 40px;
+					height: 40px;
+				}
+			}
+		`;
+		
+		document.head.appendChild(this.styleEl);
+	}
 }
