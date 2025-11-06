@@ -51,10 +51,10 @@ This note will have a green background.
 
 ### Example Use Case: Color-coding a "Tag"
 
-Let's say you want all notes with the `#ai-generated` tag to have a blue-tinted background.
+Let's say you want all notes with the `#hydropower` tag to have a blue-tinted background.
 
 1.  **Property:** `tags`
-2.  **Value:** `ai-generated`
+2.  **Value:** `hydropower`
 3.  **Match Type:** `Contains` (This is important for tag arrays\!)
 4.  **Light/Dark Theme:** Leave this on "Auto (from theme)" for a simple, theme-aware blue tint.
 
@@ -63,11 +63,11 @@ Now, any note you open with that tag will be colored:
 ```yaml
 ---
 status: in-progress
-tags: [source, ai-generated, research]
+tags: [source, hydropower, research]
 ---
 
 This note will have a blue background because the "tags"
-property *contains* "ai-generated".
+property *contains* "hydropower".
 ```
 
 -----
@@ -75,7 +75,7 @@ property *contains* "ai-generated".
 ## Settings Panel Explained
 
   * **Property:** The name of the frontmatter key (e.g., `status`, `tags`, `priority`).
-  * **Value:** The value you want to match (e.g., `complete`, `ai-generated`, `high`).
+  * **Value:** The value you want to match (e.g., `complete`, `hydropower`, `high`).
   * **Match Type:**
       * `Exact Match`: The property's value must be *exactly* what you typed.
       * `Contains`: The property's value (string or array) must *include* what you typed. **Use this for tags\!**
@@ -93,13 +93,6 @@ property *contains* "ai-generated".
 
 ## How to Install
 
-### From the Community Plugin Browser (Recommended)
-
-1.  Open **Settings** in Obsidian.
-2.  Go to **Community plugins** \> **Browse**.
-3.  Search for "Page Color Prop".
-4.  Click **Install**, then click **Enable**.
-
 ### Manual Installation
 
 1.  Download the `main.js`, `styles.css`, and `manifest.json` files from the [latest release](https://www.google.com/search?q=https://github.com/YOUR_USERNAME/obsidian-page-color-prop/releases/latest) on GitHub.
@@ -109,6 +102,13 @@ property *contains* "ai-generated".
 5.  Reload Obsidian (or close and re-open it).
 6.  Go to **Settings** \> **Community plugins**, find "Page Color Prop", and **Enable** it.
 
+### SOMEDAY BUT NOT YET: From the Community Plugin Browser (Recommended)
+
+1.  Open **Settings** in Obsidian.
+2.  Go to **Community plugins** \> **Browse**.
+3.  Search for "Page Color Prop".
+4.  Click **Install**, then click **Enable**.
+5.  
 -----
 
 ## Contributing
