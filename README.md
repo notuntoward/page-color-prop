@@ -1,9 +1,3 @@
-Here is a complete README.md file tailored for your "Page Color Prop" plugin. I've based the instructions and features on the code you provided and the bugs we discussed.
-
-Just copy the text below and save it as `README.md` in the root of your GitHub repository.
-
------
-
 # Obsidian Page Color Prop
 
 [](https://www.google.com/search?q=https://github.com/YOUR_USERNAME/obsidian-page-color-prop/releases/latest)
