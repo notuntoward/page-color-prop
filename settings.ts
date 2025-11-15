@@ -296,7 +296,7 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 					}
 					
 					await this.plugin.saveSettings();
-					this.plugin.applyColorToActiveFile();
+					this.plugin.applyColorsToAllLeaves();
 					
 					// If we just switched from auto to manual, open the color picker
 					if (wasAuto && !getIsAuto()) {
@@ -332,7 +332,7 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 						// Then update data and save
 						setColor(value);
 						this.plugin.saveSettings();
-						this.plugin.applyColorToActiveFile();
+						this.plugin.applyColorsToAllLeaves();
 					});
 			});
 		}
