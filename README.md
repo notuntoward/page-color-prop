@@ -36,7 +36,7 @@ Let's say you want all notes with `status: complete` in their frontmatter to hav
 1.  **Property:** `status`
 2.  **Value:** `complete`
 3.  **Match Type:** `Exact Match`
-4.  **Light/Dark Theme:** Click "Switch to Manual" and pick a light green for the light theme and a dark green for the dark theme.
+4.  **Light/Dark Theme:** Click "Color Picker" and pick a light green for the light theme and a dark green for the dark theme.
 
 Now, any note you open with this frontmatter will have a green background:
 
@@ -82,7 +82,7 @@ property *contains* "hydropower".
   * **Theme Backgrounds (Light/Dark):**
       * **Sample Box:** The large square on the left shows a preview of the color.
       * **Mode Label:** Tells you if the color is `Auto` or `Manual`.
-      * `Switch to Manual/Auto` **Button:** Toggles between the two modes.
+      * `Color Picker/Auto` **Button:** Toggles between the two modes.
       * **Color Picker:** When in `Manual` mode, a small color dot appears. Click this to open the color picker and choose any color.
   * **Mapping Controls:**
       * **Duplicate:** Copies the current mapping.

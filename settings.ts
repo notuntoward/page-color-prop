@@ -281,7 +281,7 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 		// Toggle button
 		settingEl.addButton(button => {
 			button
-				.setButtonText(isAuto ? 'Switch to Manual' : 'Switch to Auto')
+				.setButtonText(isAuto ? 'Color Picker' : 'Switch to Auto')
 				.onClick(async () => {
 					const wasAuto = getIsAuto();
 					if (isLight) {
