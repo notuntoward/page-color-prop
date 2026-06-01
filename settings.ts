@@ -206,7 +206,6 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 			.addButton(button => {
 				button
 					.setButtonText('↑ Up')
-					.setDisabled(index === 0)
 					.onClick(async () => {
 						if (index > 0) {
 							[this.plugin.settings.colorMappings[index], this.plugin.settings.colorMappings[index - 1]] = [
@@ -217,11 +216,11 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 							this.display();
 						}
 					});
+				button.buttonEl.disabled = index === 0;
 			})
 			.addButton(button => {
 				button
 					.setButtonText('↓ Down')
-					.setDisabled(index === this.plugin.settings.colorMappings.length - 1)
 					.onClick(async () => {
 						if (index < this.plugin.settings.colorMappings.length - 1) {
 							[this.plugin.settings.colorMappings[index], this.plugin.settings.colorMappings[index + 1]] = [
@@ -232,6 +231,7 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 							this.display();
 						}
 					});
+				button.buttonEl.disabled = index === this.plugin.settings.colorMappings.length - 1;
 			})
 			.addButton(button => {
 				button
@@ -246,7 +246,7 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 	}
 
 	private scrollToMapping(index: number) {
-		requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
 			const mappingCards = this.containerEl.querySelectorAll('.page-color-prop-mapping-card');
 			const targetCard = mappingCards[index] as HTMLElement | undefined;
 			if (targetCard) {
@@ -360,7 +360,7 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 						if (colorPickerInput) {
 							colorPickerInput.style.display = '';
 						}
-						setTimeout(() => {
+						window.setTimeout(() => {
 							if (colorPickerInput) {
 								colorPickerInput.click();
 							}

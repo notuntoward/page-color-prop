@@ -1,7 +1,9 @@
 # Obsidian Page Color Prop
 
-[](https://www.google.com/search?q=https://github.com/YOUR_USERNAME/obsidian-page-color-prop/releases/latest)
-[](https://www.google.com/search?q=https://github.com/YOUR_USERNAME/obsidian-page-color-prop/releases)
+[![Build](https://github.com/notuntoward/page-color-prop/actions/workflows/build.yml/badge.svg)](https://github.com/notuntoward/page-color-prop/actions/workflows/build.yml)
+[![CodeQL](https://github.com/notuntoward/page-color-prop/actions/workflows/codeql.yml/badge.svg)](https://github.com/notuntoward/page-color-prop/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://github.com/notuntoward/page-color-prop/actions/workflows/scorecard.yml/badge.svg)](https://github.com/notuntoward/page-color-prop/actions/workflows/scorecard.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/notuntoward/page-color-prop/badge)](https://securityscorecards.dev/viewer/?uri=github.com/notuntoward/page-color-prop)
 
 Dynamically change the background color of your notes based on their frontmatter properties.
 

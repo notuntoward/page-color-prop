@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile, MetadataCache, WorkspaceLeaf } from 'obsidian';
+import { MarkdownView, Notice, Plugin, TFile, MetadataCache, WorkspaceLeaf } from 'obsidian';
 import { PageColorPropSettings, DEFAULT_SETTINGS, PageColorPropSettingTab, PropertyColorMapping } from './settings';
 
 interface ColorMappingMatch {
@@ -218,7 +218,9 @@ export default class PageColorPropPlugin extends Plugin {
 		const leaves = this.app.workspace.getLeavesOfType('markdown');
 		
 		leaves.forEach((leaf) => {
-			const file = (leaf.view as any).file as TFile;
+			if (!(leaf.view instanceof MarkdownView)) return;
+
+			const file = leaf.view.file;
 			if (!file) return;
 
 			const metadata = this.app.metadataCache.getFileCache(file);
