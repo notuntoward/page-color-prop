@@ -113,13 +113,13 @@ export default class PageColorPropPlugin extends Plugin {
 			// Ensure isAutoLight and isAutoDark exist
 			if (mapping.isAutoLight === undefined) {
 				console.log(`Page Color Prop: Adding missing isAutoLight to mapping ${index}`);
-				mapping.isAutoLight = true;
+				mapping.isAutoLight = false;
 				needsSave = true;
 			}
 
 			if (mapping.isAutoDark === undefined) {
 				console.log(`Page Color Prop: Adding missing isAutoDark to mapping ${index}`);
-				mapping.isAutoDark = true;
+				mapping.isAutoDark = false;
 				needsSave = true;
 			}
 		});
@@ -213,6 +213,7 @@ export default class PageColorPropPlugin extends Plugin {
 
 			const color = this.isDarkTheme ? colorMapping.colorDark : colorMapping.colorLight;
 			if (color) {
+				console.log(`Page Color Prop: Matched mapping for property "${colorMapping.property}":`, colorMapping);
 				this.applyBackgroundColorToLeaf(leaf, color);
 			}
 		});
@@ -225,16 +226,26 @@ export default class PageColorPropPlugin extends Plugin {
 			if (propertyValue === undefined || propertyValue === null) continue;
 
 			if (mapping.matchType === 'exact') {
-				if (propertyValue === mapping.value) {
+				if (Array.isArray(propertyValue)) {
+					if (propertyValue.length === 1 && String(propertyValue[0]) === mapping.value) {
+						return mapping;
+					}
+				} else if (String(propertyValue) === mapping.value) {
 					return mapping;
 				}
 			} else if (mapping.matchType === 'contains') {
 				if (Array.isArray(propertyValue)) {
-					if (propertyValue.includes(mapping.value)) {
+					if (propertyValue.map(String).includes(mapping.value)) {
 						return mapping;
 					}
-				} else if (typeof propertyValue === 'string') {
-					if (propertyValue.includes(mapping.value)) {
+				} else {
+					if (String(propertyValue).includes(mapping.value)) {
+						return mapping;
+					}
+				}
+			} else if (mapping.matchType === 'exact-list') {
+				if (Array.isArray(propertyValue)) {
+					if (propertyValue.length === 1 && propertyValue[0] === mapping.value) {
 						return mapping;
 					}
 				}
@@ -299,7 +310,7 @@ export default class PageColorPropPlugin extends Plugin {
 		});
 	}
 
-	private isValidColor(color: string): boolean {
+	isValidColor(color: string): boolean {
 		if (!color || typeof color !== 'string') {
 			return false;
 		}
@@ -309,7 +320,7 @@ export default class PageColorPropPlugin extends Plugin {
 		}
 
 		const testEl = document.createElement('div');
-		testEl.style.color = color;
-		return testEl.style.color !== '';
+		testEl.style.backgroundColor = color;
+		return testEl.style.backgroundColor !== '';
 	}
 }
