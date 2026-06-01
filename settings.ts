@@ -278,46 +278,8 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 		const modeLabel = colorDisplay.createDiv('page-color-prop-mode-label');
 		modeLabel.setText(isAuto ? 'Auto (from theme)' : `Manual`);
 
-		// Toggle button
-		settingEl.addButton(button => {
-			button
-				.setButtonText(isAuto ? 'Color Picker' : 'Switch to Auto')
-				.onClick(async () => {
-					const wasAuto = getIsAuto();
-					if (isLight) {
-						mapping.isAutoLight = !mapping.isAutoLight;
-					} else {
-						mapping.isAutoDark = !mapping.isAutoDark;
-					}
-					
-					// If switching to auto, reset to default
-					if ((isLight && mapping.isAutoLight) || (!isLight && mapping.isAutoDark)) {
-						setColor(autoDefault);
-					}
-					
-					await this.plugin.saveSettings();
-					this.plugin.applyColorsToAllLeaves();
-					
-					// If we just switched from auto to manual, open the color picker
-					if (wasAuto && !getIsAuto()) {
-						// Redraw to show color picker, then click it
-						this.display();
-						// Find and click the color picker that was just created
-						setTimeout(() => {
-							const colorInputs = document.querySelectorAll('input[type="color"]');
-							if (colorInputs.length > 0) {
-								const lastColorInput = colorInputs[colorInputs.length - 1] as HTMLInputElement;
-								lastColorInput.click();
-							}
-						}, 50);
-					} else {
-						this.display(); // Redraw to show/hide color picker
-					}
-				});
-		});
-
-		// Color picker (only show if manual mode)
-		if (!isAuto) {
+		let colorPickerInput: HTMLInputElement | null = null;
+		const addColorPicker = () => {
 			settingEl.addColorPicker(colorPicker => {
 				const currentColor = getColor();
 				const pickerColor = this.resolveColorForPicker(currentColor);
@@ -335,6 +297,57 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 						this.plugin.applyColorsToAllLeaves();
 					});
 			});
+
+			const colorInputs = colorSettingContainer.querySelectorAll('input[type="color"]');
+			colorPickerInput = colorInputs[colorInputs.length - 1] as HTMLInputElement | null;
+		};
+
+		// Toggle button
+		settingEl.addButton(button => {
+			button
+				.setButtonText(isAuto ? 'Color Picker' : 'Switch to Auto')
+				.onClick(async () => {
+					const wasAuto = getIsAuto();
+					const nowAuto = !wasAuto;
+					setIsAuto(nowAuto);
+					
+					if (nowAuto) {
+						setColor(autoDefault);
+					} else {
+						if (!colorPickerInput) {
+							addColorPicker();
+						}
+						if (colorPickerInput) {
+							setColor(colorPickerInput.value);
+						}
+					}
+					
+					await this.plugin.saveSettings();
+					this.plugin.applyColorsToAllLeaves();
+
+					const currentDisplayColor = this.resolveColorForDisplay(nowAuto ? autoDefault : getColor());
+					sampleBox.style.backgroundColor = currentDisplayColor;
+					modeLabel.setText(nowAuto ? 'Auto (from theme)' : `Manual`);
+					button.setButtonText(nowAuto ? 'Color Picker' : 'Switch to Auto');
+
+					if (wasAuto && !nowAuto) {
+						if (colorPickerInput) {
+							colorPickerInput.style.display = '';
+						}
+						setTimeout(() => {
+							if (colorPickerInput) {
+								colorPickerInput.click();
+							}
+						}, 50);
+					} else if (!wasAuto && nowAuto && colorPickerInput) {
+						colorPickerInput.style.display = 'none';
+					}
+				});
+		});
+
+		// Color picker (only show if manual mode)
+		if (!isAuto) {
+			addColorPicker();
 		}
 	}
 
