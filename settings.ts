@@ -13,11 +13,13 @@ export interface PropertyColorMapping {
 
 export interface PageColorPropSettings {
 	colorMappings: PropertyColorMapping[];
+	notifyOnMultipleMatches: boolean;
 }
 
 // EMPTY defaults - no example mappings!
 export const DEFAULT_SETTINGS: PageColorPropSettings = {
-	colorMappings: []
+	colorMappings: [],
+	notifyOnMultipleMatches: false
 };
 
 export class PageColorPropSettingTab extends PluginSettingTab {
@@ -59,6 +61,18 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 						});
 						await this.plugin.saveSettings();
 						this.display();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName('Notify when multiple rules match')
+			.setDesc('Show a notification when more than one color mapping applies to a note. The lowest matching rule in this list sets the background color.')
+			.addToggle(toggle => {
+				toggle
+					.setValue(this.plugin.settings.notifyOnMultipleMatches)
+					.onChange(async value => {
+						this.plugin.settings.notifyOnMultipleMatches = value;
+						await this.plugin.saveSettings();
 					});
 			});
 
@@ -180,8 +194,8 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 		new Setting(mappingCard)
 			.addButton(button => {
 				button.setButtonText('🔄 Duplicate').onClick(async () => {
-					const duplicateIndex = this.plugin.settings.colorMappings.length;
-					this.plugin.settings.colorMappings.push({
+					const duplicateIndex = index + 1;
+					this.plugin.settings.colorMappings.splice(duplicateIndex, 0, {
 						...JSON.parse(JSON.stringify(mapping))
 					});
 					await this.plugin.saveSettings();

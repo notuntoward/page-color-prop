@@ -1,11 +1,18 @@
-import { Plugin, TFile, MetadataCache, WorkspaceLeaf } from 'obsidian';
+import { Notice, Plugin, TFile, MetadataCache, WorkspaceLeaf } from 'obsidian';
 import { PageColorPropSettings, DEFAULT_SETTINGS, PageColorPropSettingTab, PropertyColorMapping } from './settings';
+
+interface ColorMappingMatch {
+	mapping: PropertyColorMapping;
+	index: number;
+	propertyValue: any;
+}
 
 export default class PageColorPropPlugin extends Plugin {
 	settings: PageColorPropSettings;
 	private styleEl: HTMLStyleElement | null = null;
 	private isDarkTheme: boolean = false;
 	private themeObserver: MutationObserver | null = null;
+	private multipleMatchNoticeKeys: Set<string> = new Set();
 
 	async onload() {
 		await this.loadSettings();
@@ -51,12 +58,13 @@ export default class PageColorPropPlugin extends Plugin {
 		// Only use defaults if no data exists at all
 		if (!loadedData || !loadedData.colorMappings) {
 			console.log('Page Color Prop: No saved data found, using defaults (empty array)');
-			this.settings = { colorMappings: [] };
+			this.settings = { ...DEFAULT_SETTINGS, colorMappings: [] };
 		} else {
 			console.log('Page Color Prop: Using saved data (NOT merging with defaults)');
 			// Load saved data - DO NOT MERGE WITH DEFAULTS
 			this.settings = {
-				colorMappings: loadedData.colorMappings
+				colorMappings: loadedData.colorMappings,
+				notifyOnMultipleMatches: loadedData.notifyOnMultipleMatches ?? DEFAULT_SETTINGS.notifyOnMultipleMatches
 			};
 		}
 
@@ -124,6 +132,12 @@ export default class PageColorPropPlugin extends Plugin {
 			}
 		});
 
+		if (this.settings.notifyOnMultipleMatches === undefined) {
+			console.log('Page Color Prop: Adding missing notifyOnMultipleMatches setting');
+			this.settings.notifyOnMultipleMatches = DEFAULT_SETTINGS.notifyOnMultipleMatches;
+			needsSave = true;
+		}
+
 		if (needsSave) {
 			console.log('Page Color Prop: Migrations applied, saving settings');
 			this.saveSettings();
@@ -149,6 +163,8 @@ export default class PageColorPropPlugin extends Plugin {
 		} catch (error) {
 			console.error('Page Color Prop: ERROR saving settings!', error);
 		}
+
+		this.multipleMatchNoticeKeys.clear();
 
 		// Reapply colors when settings change
 		this.applyColorsToAllLeaves();
@@ -208,8 +224,11 @@ export default class PageColorPropPlugin extends Plugin {
 			const metadata = this.app.metadataCache.getFileCache(file);
 			if (!metadata?.frontmatter) return;
 
-			const colorMapping = this.findMatchingColorMapping(metadata.frontmatter);
+			const matchResult = this.findMatchingColorMappings(metadata.frontmatter);
+			const colorMapping = matchResult.selected?.mapping;
 			if (!colorMapping) return;
+
+			this.notifyIfMultipleMappingsMatch(file, matchResult.matches);
 
 			const color = this.isDarkTheme ? colorMapping.colorDark : colorMapping.colorLight;
 			if (color) {
@@ -219,40 +238,64 @@ export default class PageColorPropPlugin extends Plugin {
 		});
 	}
 
-	private findMatchingColorMapping(frontmatter: any): PropertyColorMapping | null {
-		for (const mapping of this.settings.colorMappings) {
+	private findMatchingColorMappings(frontmatter: any): { selected: ColorMappingMatch | null; matches: ColorMappingMatch[] } {
+		const matches: ColorMappingMatch[] = [];
+
+		this.settings.colorMappings.forEach((mapping, index) => {
 			const propertyValue = frontmatter[mapping.property];
 
-			if (propertyValue === undefined || propertyValue === null) continue;
+			if (propertyValue === undefined || propertyValue === null) return;
 
 			if (mapping.matchType === 'exact') {
 				if (Array.isArray(propertyValue)) {
 					if (propertyValue.length === 1 && String(propertyValue[0]) === mapping.value) {
-						return mapping;
+						matches.push({ mapping, index, propertyValue });
 					}
 				} else if (String(propertyValue) === mapping.value) {
-					return mapping;
+					matches.push({ mapping, index, propertyValue });
 				}
 			} else if (mapping.matchType === 'contains') {
 				if (Array.isArray(propertyValue)) {
 					if (propertyValue.map(String).includes(mapping.value)) {
-						return mapping;
+						matches.push({ mapping, index, propertyValue });
 					}
 				} else {
 					if (String(propertyValue).includes(mapping.value)) {
-						return mapping;
+						matches.push({ mapping, index, propertyValue });
 					}
 				}
 			} else if (mapping.matchType === 'exact-list') {
 				if (Array.isArray(propertyValue)) {
 					if (propertyValue.length === 1 && propertyValue[0] === mapping.value) {
-						return mapping;
+						matches.push({ mapping, index, propertyValue });
 					}
 				}
 			}
-		}
+		});
 
-		return null;
+		return {
+			selected: matches.length > 0 ? matches[matches.length - 1] : null,
+			matches
+		};
+	}
+
+	private notifyIfMultipleMappingsMatch(file: TFile, matches: ColorMappingMatch[]) {
+		if (!this.settings.notifyOnMultipleMatches || matches.length <= 1) return;
+
+		const matchSignature = matches.map(match => match.index).join(',');
+		const noticeKey = `${file.path}:${matchSignature}`;
+		if (this.multipleMatchNoticeKeys.has(noticeKey)) return;
+
+		this.multipleMatchNoticeKeys.add(noticeKey);
+		const selectedMatch = matches[matches.length - 1];
+		const matchedRules = matches
+			.map(match => `#${match.index + 1} ${match.mapping.property} ${match.mapping.matchType} ${match.mapping.value}`)
+			.join('; ');
+
+		new Notice(
+			`Page Color Prop: ${matches.length} rules match "${file.basename}". Using lowest rule #${selectedMatch.index + 1}. Matched: ${matchedRules}`,
+			10000
+		);
 	}
 
 	private applyBackgroundColorToLeaf(leaf: WorkspaceLeaf, color: string) {

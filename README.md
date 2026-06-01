@@ -18,6 +18,7 @@ This plugin allows you to create visual cues for your notes, such as setting a r
   * **Theme Aware:** Set different colors for **Light** and **Dark** themes.
   * **Auto-Color:** A one-click "Auto" mode that picks a subtle, theme-aware accent color.
   * **Manual Color:** Use a full color-picker to select any specific color you want.
+  * **Conflict Awareness:** Optionally notify when more than one mapping applies to the same note.
   * **Easy Management:** A settings panel to add, delete, duplicate, and re-order your color-mapping rules.
 
 ## How to Use
@@ -70,6 +71,12 @@ This note will have a blue background because the "tags"
 property *contains* "hydropower".
 ```
 
+### Rule Priority and Multiple Matches
+
+More than one mapping can apply to the same note. For example, a note might have `source: literaturenote` and also include `ai-generated` in its `tags`. In that case, the plugin uses the matching rule that appears lowest in the settings list.
+
+You can turn on **Notify when multiple rules match** in the settings panel if you want Obsidian to show a notification whenever this happens. This setting is off by default.
+
 -----
 
 ## Settings Panel Explained
@@ -84,9 +91,10 @@ property *contains* "hydropower".
       * **Mode Label:** Tells you if the color is `Auto` or `Manual`.
       * `Color Picker/Auto` **Button:** Toggles between the two modes.
       * **Color Picker:** When in `Manual` mode, a small color dot appears. Click this to open the color picker and choose any color.
+  * **Notify when multiple rules match:** Shows a notification when more than one mapping matches a note. When this happens, the lowest matching rule in the list sets the background color.
   * **Mapping Controls:**
       * **Duplicate:** Copies the current mapping.
-      * **Up/Down:** Changes the priority of the mapping. The plugin uses the *first* mapping it finds that matches, from top to bottom.
+      * **Up/Down:** Changes the priority of the mapping. If multiple mappings match, the plugin uses the lowest matching mapping in the list.
       * **Delete:** Removes the mapping.
 
 -----
