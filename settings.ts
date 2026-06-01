@@ -180,11 +180,13 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 		new Setting(mappingCard)
 			.addButton(button => {
 				button.setButtonText('🔄 Duplicate').onClick(async () => {
-					this.plugin.settings.colorMappings.splice(index + 1, 0, {
+					const duplicateIndex = this.plugin.settings.colorMappings.length;
+					this.plugin.settings.colorMappings.push({
 						...JSON.parse(JSON.stringify(mapping))
 					});
 					await this.plugin.saveSettings();
 					this.display();
+					this.scrollToMapping(duplicateIndex);
 				});
 			})
 			.addButton(button => {
@@ -227,6 +229,16 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 						this.display();
 					});
 			});
+	}
+
+	private scrollToMapping(index: number) {
+		requestAnimationFrame(() => {
+			const mappingCards = this.containerEl.querySelectorAll('.page-color-prop-mapping-card');
+			const targetCard = mappingCards[index] as HTMLElement | undefined;
+			if (targetCard) {
+				targetCard.scrollIntoView({ block: 'start' });
+			}
+		});
 	}
 
 	private createThemeColorSetting(
