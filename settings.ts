@@ -19,7 +19,7 @@ export interface PageColorPropSettings {
 // EMPTY defaults - no example mappings!
 export const DEFAULT_SETTINGS: PageColorPropSettings = {
 	colorMappings: [],
-	notifyOnMultipleMatches: false
+	notifyOnMultipleMatches: true
 };
 
 export class PageColorPropSettingTab extends PluginSettingTab {

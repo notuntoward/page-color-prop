@@ -295,7 +295,7 @@ export default class PageColorPropPlugin extends Plugin {
 			.join('; ');
 
 		new Notice(
-			`Page Color Prop: ${matches.length} rules match "${file.basename}". Using lowest rule #${selectedMatch.index + 1}. Matched: ${matchedRules}`,
+			`Page Color Prop: ${matches.length} rules match "${file.basename}". Using lowest rule #${selectedMatch.index + 1}. Matched: ${matchedRules}. Mute in settings.`,
 			10000
 		);
 	}

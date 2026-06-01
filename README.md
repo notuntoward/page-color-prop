@@ -77,7 +77,7 @@ property *contains* "hydropower".
 
 More than one mapping can apply to the same note. For example, a note might have `source: literaturenote` and also include `ai-generated` in its `tags`. In that case, the plugin uses the matching rule that appears lowest in the settings list.
 
-You can turn on **Notify when multiple rules match** in the settings panel if you want Obsidian to show a notification whenever this happens. This setting is off by default.
+**Notify when multiple rules match** is on by default and can be turned off in the settings panel.
 
 -----
 
