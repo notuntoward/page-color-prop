@@ -13,15 +13,15 @@ This plugin allows you to create visual cues for your notes, such as setting a r
 
 ## Features
 
-  * **Dynamic Note Coloring:** Automatically applies a background color to the active note based on its frontmatter.
-  * **Flexible Matching:**
-      * **Exact Match:** Triggers on a specific property-value pair (e.g., `priority: high`).
+  * **Dynamic note coloring:** Automatically applies a background color to the active note based on its frontmatter.
+  * **Flexible matching:**
+      * **Exact match:** Triggers on a specific property-value pair (e.g., `priority: high`).
       * **Contains:** Triggers if the property's value *contains* the text (e.g., for a `tags` array).
-  * **Theme Aware:** Set different colors for **Light** and **Dark** themes.
-  * **Auto-Color:** A one-click "Auto" mode that picks a subtle, theme-aware accent color.
-  * **Manual Color:** Use a full color-picker to select any specific color you want.
-  * **Conflict Awareness:** Optionally notify when more than one mapping applies to the same note.
-  * **Easy Management:** A settings panel to add, delete, duplicate, and re-order your color-mapping rules.
+  * **Theme aware:** Set different colors for **Light** and **Dark** themes.
+  * **Auto color:** A one-click "Auto" mode that picks a subtle, theme-aware accent color.
+  * **Manual color:** Use a color picker to select any specific color you want.
+  * **Conflict awareness:** Optionally notify when more than one mapping applies to the same note.
+  * **Easy management:** A settings panel to add, delete, duplicate, and reorder your color-mapping rules.
 
 ## How to Use
 
@@ -38,8 +38,8 @@ Let's say you want all notes with `status: complete` in their frontmatter to hav
 
 1.  **Property:** `status`
 2.  **Value:** `complete`
-3.  **Match Type:** `Exact Match`
-4.  **Light/Dark Theme:** Click "Color Picker" and pick a light green for the light theme and a dark green for the dark theme.
+3.  **Match type:** `Exact match`
+4.  **Light/dark theme:** Click "Use color picker" and pick a light green for the light theme and a dark green for the dark theme.
 
 Now, any note you open with this frontmatter will have a green background:
 
@@ -58,8 +58,8 @@ Let's say you want all notes with the `#hydropower` tag to have a blue-tinted ba
 
 1.  **Property:** `tags`
 2.  **Value:** `hydropower`
-3.  **Match Type:** `Contains` (This is important for tag arrays\!)
-4.  **Light/Dark Theme:** Leave this on "Auto (from theme)" for a simple, theme-aware blue tint.
+3.  **Match type:** `Contains` (This is important for tag arrays\!)
+4.  **Light/dark theme:** Leave this on "Auto (from theme)" for a simple, theme-aware blue tint.
 
 Now, any note you open with that tag will be colored:
 
@@ -81,18 +81,18 @@ More than one mapping can apply to the same note. For example, a note might have
 
 -----
 
-## Settings Panel Explained
+## Settings panel explained
 
   * **Property:** The name of the frontmatter key (e.g., `status`, `tags`, `priority`).
   * **Value:** The value you want to match (e.g., `complete`, `hydropower`, `high`).
-  * **Match Type:**
-      * `Exact Match`: The property's value must be *exactly* what you typed.
+  * **Match type:**
+      * `Exact match`: The property's value must be *exactly* what you typed.
       * `Contains`: The property's value (string or array) must *include* what you typed. **Use this for tags\!**
-  * **Theme Backgrounds (Light/Dark):**
-      * **Sample Box:** The large square on the left shows a preview of the color.
-      * **Mode Label:** Tells you if the color is `Auto` or `Manual`.
-      * `Color Picker/Auto` **Button:** Toggles between the two modes.
-      * **Color Picker:** When in `Manual` mode, a small color dot appears. Click this to open the color picker and choose any color.
+  * **Theme backgrounds (light/dark):**
+      * **Sample box:** The large square on the left shows a preview of the color.
+      * **Mode label:** Tells you if the color is `Auto` or `Manual`.
+      * **Use color picker / Use auto color:** Toggles between the two modes.
+      * **Color picker:** When in `Manual` mode, a small color dot appears. Click this to open the color picker and choose any color.
   * **Notify when multiple rules match:** Shows a notification when more than one mapping matches a note. When this happens, the lowest matching rule in the list sets the background color.
   * **Mapping Controls:**
       * **Duplicate:** Copies the current mapping.
@@ -105,8 +105,8 @@ More than one mapping can apply to the same note. For example, a note might have
 
 ## Contributing
 
-Found a bug or have a feature request? Feel free to open an issue on the [GitHub repository](https://www.google.com/search?q=https://github.com/notuntoward/obsidian-page-color-prop/issues).
+Found a bug or have a feature request? Feel free to open an issue on the [GitHub repository](https://github.com/notuntoward/page-color-prop/issues).
 
 ## License
 
-This plugin is licensed under the [MIT License](https://www.google.com/search?q=LICENSE).
+This plugin is licensed under the [MIT License](LICENSE).

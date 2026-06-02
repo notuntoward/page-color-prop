@@ -1,6 +1,154 @@
-/* Page Color Prop Plugin - Minimal CSS */
-/* Background applied only to main container, all content transparent */
+/* Page Color Prop */
+
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"],
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] {
+	background-color: var(--page-color-prop-background) !important;
+}
+
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] .view-content,
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] .markdown-source-view,
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] .markdown-preview-view,
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] .cm-editor,
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] .cm-scroller,
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] .markdown-preview-sizer,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] .view-content,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] .markdown-source-view,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] .markdown-preview-view,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] .cm-editor,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] .cm-scroller,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] .markdown-preview-sizer {
+	background: transparent !important;
+}
+
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] img,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] img {
+	background: transparent !important;
+	mix-blend-mode: normal !important;
+}
+
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] pre,
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] code,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] pre,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] code {
+	background-color: var(--code-background) !important;
+}
 
 .page-color-prop-active {
-  transition: background-color 0.2s ease-in-out;
+	transition: background-color 0.2s ease-in-out;
+}
+
+.page-color-prop-mapping-card {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	padding: 10px 12px;
+	margin-bottom: 8px;
+	background-color: var(--background-secondary);
+}
+
+.page-color-prop-mapping-card .setting-item {
+	padding: 6px 0;
+}
+
+.page-color-prop-mapping-card .setting-item-name {
+	font-size: 13px;
+}
+
+.page-color-prop-mapping-card .setting-item-description {
+	font-size: 12px;
+	line-height: 1.3;
+}
+
+.page-color-prop-mapping-card .setting-item-control input,
+.page-color-prop-mapping-card .setting-item-control select {
+	min-height: 28px;
+}
+
+.page-color-prop-mapping-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 4px;
+}
+
+.page-color-prop-rule-number {
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--text-accent);
+	white-space: nowrap;
+}
+
+.page-color-prop-rule-summary {
+	font-size: 12px;
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.page-color-prop-rule-priority-note {
+	margin: 8px 0 12px;
+	padding: 8px 10px;
+	border-left: 3px solid var(--interactive-accent);
+	background-color: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: 13px;
+	line-height: 1.35;
+}
+
+.page-color-prop-description {
+	margin-bottom: 10px;
+	color: var(--text-muted);
+	font-size: 14px;
+}
+
+.page-color-prop-empty-state {
+	padding: 24px;
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: 4px;
+	background-color: var(--background-secondary);
+	font-size: 14px;
+	color: var(--text-muted);
+	line-height: 1.6;
+}
+
+.page-color-prop-color-setting-container {
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 8px;
+	margin-top: 6px;
+}
+
+.page-color-prop-color-display {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 0 0 4px 0;
+	margin-bottom: 2px;
+}
+
+.page-color-prop-sample-box {
+	width: 32px;
+	height: 32px;
+	border-radius: 4px;
+	border: 2px solid var(--background-modifier-border);
+	box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
+	flex-shrink: 0;
+}
+
+.page-color-prop-mode-label {
+	font-size: 13px;
+	color: var(--text-normal);
+	font-weight: 500;
+	flex: 1;
+}
+
+@media (max-width: 768px) {
+	.page-color-prop-mapping-card {
+		padding: 8px;
+		margin-bottom: 8px;
+	}
+
+	.page-color-prop-sample-box {
+		width: 30px;
+		height: 30px;
+	}
 }

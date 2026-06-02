@@ -1,15 +1,28 @@
-import { MarkdownView, Notice, Plugin, TFile, MetadataCache, WorkspaceLeaf } from 'obsidian';
-import { PageColorPropSettings, DEFAULT_SETTINGS, PageColorPropSettingTab, PropertyColorMapping } from './settings';
+import { MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import {
+	DEFAULT_DARK_AUTO_COLOR,
+	DEFAULT_LIGHT_AUTO_COLOR,
+	PageColorPropSettings,
+	DEFAULT_SETTINGS,
+	PageColorPropSettingTab,
+	PropertyColorMapping
+} from './settings';
+
+type FrontmatterValue = string | number | boolean | null | undefined | FrontmatterValue[];
+type Frontmatter = Record<string, FrontmatterValue>;
 
 interface ColorMappingMatch {
 	mapping: PropertyColorMapping;
 	index: number;
-	propertyValue: any;
+	propertyValue: FrontmatterValue;
+}
+
+interface LegacyPropertyColorMapping extends Partial<PropertyColorMapping> {
+	color?: string;
 }
 
 export default class PageColorPropPlugin extends Plugin {
 	settings: PageColorPropSettings;
-	private styleEl: HTMLStyleElement | null = null;
 	private isDarkTheme: boolean = false;
 	private themeObserver: MutationObserver | null = null;
 	private multipleMatchNoticeKeys: Set<string> = new Set();
@@ -51,38 +64,35 @@ export default class PageColorPropPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		const loadedData = await this.loadData();
-		console.log('Page Color Prop: Loading settings...');
-		console.log('Page Color Prop: Loaded data from disk:', JSON.stringify(loadedData, null, 2));
+		const loadedData = await this.loadData() as Partial<PageColorPropSettings> | null;
 
-		// Only use defaults if no data exists at all
-		if (!loadedData || !loadedData.colorMappings) {
-			console.log('Page Color Prop: No saved data found, using defaults (empty array)');
+		if (!loadedData || !Array.isArray(loadedData.colorMappings)) {
 			this.settings = { ...DEFAULT_SETTINGS, colorMappings: [] };
 		} else {
-			console.log('Page Color Prop: Using saved data (NOT merging with defaults)');
-			// Load saved data - DO NOT MERGE WITH DEFAULTS
 			this.settings = {
-				colorMappings: loadedData.colorMappings,
+				colorMappings: loadedData.colorMappings.filter(this.isValidMapping),
 				notifyOnMultipleMatches: loadedData.notifyOnMultipleMatches ?? DEFAULT_SETTINGS.notifyOnMultipleMatches
 			};
 		}
 
-		console.log('Page Color Prop: Final settings after load:', JSON.stringify(this.settings, null, 2));
-		console.log(`Page Color Prop: Total mappings loaded: ${this.settings.colorMappings.length}`);
-
-		// Migrate old format to new format
 		this.migrateSettings();
+	}
+
+	private isValidMapping(mapping: unknown): mapping is PropertyColorMapping {
+		if (!mapping || typeof mapping !== 'object') return false;
+
+		const candidate = mapping as Partial<PropertyColorMapping>;
+		return typeof candidate.property === 'string' &&
+			typeof candidate.value === 'string' &&
+			(candidate.matchType === 'exact' || candidate.matchType === 'contains');
 	}
 
 	private migrateSettings() {
 		let needsSave = false;
-		console.log('Page Color Prop: Checking for migrations...');
 
-		this.settings.colorMappings.forEach((mapping: any, index) => {
+		this.settings.colorMappings.forEach((mapping: LegacyPropertyColorMapping) => {
 			// If old format exists (has 'color' but not 'colorLight' or 'colorDark')
 			if (mapping.color && (!mapping.colorLight || !mapping.colorDark)) {
-				console.log(`Page Color Prop: Migrating mapping ${index} from old single-color format`);
 				mapping.colorLight = mapping.color;
 				mapping.colorDark = mapping.color;
 				mapping.isAutoLight = false;
@@ -94,72 +104,51 @@ export default class PageColorPropPlugin extends Plugin {
 			// Update old auto colors to new more visible values
 			if (mapping.colorLight === 'hsla(var(--accent-h), var(--accent-s), 95%, 0.10)' ||
 				mapping.colorLight === 'hsla(var(--accent-h), var(--accent-s), 90%, 0.25)') {
-				console.log(`Page Color Prop: Updating mapping ${index} light color to more visible version`);
 				mapping.colorLight = 'hsla(var(--accent-h), var(--accent-s), 90%, 0.35)';
 				needsSave = true;
 			}
 
 			if (mapping.colorDark === 'hsla(var(--accent-h), var(--accent-s), 18%, 0.12)') {
-				console.log(`Page Color Prop: Updating mapping ${index} dark color to more visible version`);
 				mapping.colorDark = 'hsla(var(--accent-h), var(--accent-s), 25%, 0.30)';
 				needsSave = true;
 			}
 
 			// Ensure both colorLight and colorDark exist
 			if (!mapping.colorLight) {
-				console.log(`Page Color Prop: Adding missing colorLight to mapping ${index}`);
 				mapping.colorLight = 'hsla(var(--accent-h), var(--accent-s), 90%, 0.35)';
 				needsSave = true;
 			}
 
 			if (!mapping.colorDark) {
-				console.log(`Page Color Prop: Adding missing colorDark to mapping ${index}`);
 				mapping.colorDark = 'hsla(var(--accent-h), var(--accent-s), 25%, 0.30)';
 				needsSave = true;
 			}
 
 			// Ensure isAutoLight and isAutoDark exist
 			if (mapping.isAutoLight === undefined) {
-				console.log(`Page Color Prop: Adding missing isAutoLight to mapping ${index}`);
 				mapping.isAutoLight = false;
 				needsSave = true;
 			}
 
 			if (mapping.isAutoDark === undefined) {
-				console.log(`Page Color Prop: Adding missing isAutoDark to mapping ${index}`);
 				mapping.isAutoDark = false;
 				needsSave = true;
 			}
 		});
 
 		if (this.settings.notifyOnMultipleMatches === undefined) {
-			console.log('Page Color Prop: Adding missing notifyOnMultipleMatches setting');
 			this.settings.notifyOnMultipleMatches = DEFAULT_SETTINGS.notifyOnMultipleMatches;
 			needsSave = true;
 		}
 
 		if (needsSave) {
-			console.log('Page Color Prop: Migrations applied, saving settings');
 			this.saveSettings();
-		} else {
-			console.log('Page Color Prop: No migrations needed');
 		}
 	}
 
 	async saveSettings() {
-		console.log('Page Color Prop: SAVING settings...');
-		console.log('Page Color Prop: About to save:', JSON.stringify(this.settings, null, 2));
-		console.log(`Page Color Prop: Saving ${this.settings.colorMappings.length} mappings`);
-
-		// Completely replace the saved data (no merging with old data)
 		try {
 			await this.saveData(this.settings);
-			console.log('Page Color Prop: Settings saved SUCCESSFULLY to disk');
-
-			// Verify what was saved
-			const verify = await this.loadData();
-			console.log('Page Color Prop: Verification - data read back from disk:', JSON.stringify(verify, null, 2));
-			console.log(`Page Color Prop: Verification - mappings count after save: ${verify?.colorMappings?.length || 0}`);
 		} catch (error) {
 			console.error('Page Color Prop: ERROR saving settings!', error);
 		}
@@ -232,15 +221,22 @@ export default class PageColorPropPlugin extends Plugin {
 
 			this.notifyIfMultipleMappingsMatch(file, matchResult.matches);
 
-			const color = this.isDarkTheme ? colorMapping.colorDark : colorMapping.colorLight;
+			const color = this.getMappingColor(colorMapping);
 			if (color) {
-				console.log(`Page Color Prop: Matched mapping for property "${colorMapping.property}":`, colorMapping);
 				this.applyBackgroundColorToLeaf(leaf, color);
 			}
 		});
 	}
 
-	private findMatchingColorMappings(frontmatter: any): { selected: ColorMappingMatch | null; matches: ColorMappingMatch[] } {
+	private getMappingColor(mapping: PropertyColorMapping): string {
+		if (this.isDarkTheme) {
+			return mapping.isAutoDark ? DEFAULT_DARK_AUTO_COLOR : mapping.colorDark;
+		}
+
+		return mapping.isAutoLight ? DEFAULT_LIGHT_AUTO_COLOR : mapping.colorLight;
+	}
+
+	private findMatchingColorMappings(frontmatter: Frontmatter): { selected: ColorMappingMatch | null; matches: ColorMappingMatch[] } {
 		const matches: ColorMappingMatch[] = [];
 
 		this.settings.colorMappings.forEach((mapping, index) => {
@@ -263,12 +259,6 @@ export default class PageColorPropPlugin extends Plugin {
 					}
 				} else {
 					if (String(propertyValue).includes(mapping.value)) {
-						matches.push({ mapping, index, propertyValue });
-					}
-				}
-			} else if (mapping.matchType === 'exact-list') {
-				if (Array.isArray(propertyValue)) {
-					if (propertyValue.length === 1 && propertyValue[0] === mapping.value) {
 						matches.push({ mapping, index, propertyValue });
 					}
 				}
@@ -302,56 +292,22 @@ export default class PageColorPropPlugin extends Plugin {
 
 	private applyBackgroundColorToLeaf(leaf: WorkspaceLeaf, color: string) {
 		if (!this.isValidColor(color)) {
-			console.warn(`Page Color Prop: Invalid color format: ${color}`);
 			return;
 		}
 
-		// Add a unique data attribute to identify this leaf
-		const leafEl = (leaf as any).containerEl as HTMLElement;
-		if (!leafEl) return;
+		const targetEl = leaf.view.containerEl.querySelector('.workspace-leaf-content[data-type="markdown"]') ?? leaf.view.containerEl;
+		if (!targetEl.instanceOf(HTMLElement)) return;
 
-		// Generate a unique ID for this leaf
-		const leafId = `page-color-${Math.random().toString(36).substr(2, 9)}`;
-		leafEl.setAttribute('data-page-color-id', leafId);
-
-		// Create style element for this specific leaf
-		const styleEl = document.createElement('style');
-		styleEl.setAttribute('data-page-color-style', leafId);
-		styleEl.textContent = `
-			.workspace-leaf[data-page-color-id="${leafId}"] .workspace-leaf-content[data-type="markdown"] {
-				background-color: ${color} !important;
-			}
-
-			.workspace-leaf[data-page-color-id="${leafId}"] .workspace-leaf-content[data-type="markdown"] .view-content,
-			.workspace-leaf[data-page-color-id="${leafId}"] .workspace-leaf-content[data-type="markdown"] .markdown-source-view,
-			.workspace-leaf[data-page-color-id="${leafId}"] .workspace-leaf-content[data-type="markdown"] .markdown-preview-view,
-			.workspace-leaf[data-page-color-id="${leafId}"] .workspace-leaf-content[data-type="markdown"] .cm-editor,
-			.workspace-leaf[data-page-color-id="${leafId}"] .workspace-leaf-content[data-type="markdown"] .cm-scroller,
-			.workspace-leaf[data-page-color-id="${leafId}"] .workspace-leaf-content[data-type="markdown"] .markdown-preview-sizer {
-				background: transparent !important;
-			}
-
-			.workspace-leaf[data-page-color-id="${leafId}"] .workspace-leaf-content[data-type="markdown"] img {
-				background: transparent !important;
-				mix-blend-mode: normal !important;
-			}
-
-			.workspace-leaf[data-page-color-id="${leafId}"] .workspace-leaf-content[data-type="markdown"] pre,
-			.workspace-leaf[data-page-color-id="${leafId}"] .workspace-leaf-content[data-type="markdown"] code {
-				background-color: var(--code-background) !important;
-			}
-		`;
-
-		document.head.appendChild(styleEl);
+		targetEl.addClass('page-color-prop-active');
+		targetEl.style.setProperty('--page-color-prop-background', color);
 	}
 
 	private removeAllStyles() {
-		// Remove all style elements created by this plugin
-		document.querySelectorAll('style[data-page-color-style]').forEach(el => el.remove());
-		
-		// Remove all data attributes from leaves
-		document.querySelectorAll('.workspace-leaf[data-page-color-id]').forEach(el => {
-			el.removeAttribute('data-page-color-id');
+		document.querySelectorAll('.page-color-prop-active').forEach(el => {
+			if (el.instanceOf(HTMLElement)) {
+				el.removeClass('page-color-prop-active');
+				el.style.removeProperty('--page-color-prop-background');
+			}
 		});
 	}
 
@@ -360,12 +316,10 @@ export default class PageColorPropPlugin extends Plugin {
 			return false;
 		}
 
-		if (color.startsWith('--') || color.startsWith('var(--')) {
-			return true;
+		if (/[;{}<>]/.test(color)) {
+			return false;
 		}
 
-		const testEl = document.createElement('div');
-		testEl.style.backgroundColor = color;
-		return testEl.style.backgroundColor !== '';
+		return CSS.supports('background-color', color);
 	}
 }

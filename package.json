@@ -1,7 +1,7 @@
 {
   "name": "page-color-prop",
   "version": "1.2.3",
-  "description": "Color note page backgrounds - minimal CSS fix",
+  "description": "Colors note backgrounds based on frontmatter properties.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -16,7 +16,7 @@
     "color",
     "background"
   ],
-  "author": "Your Name",
+  "author": "notuntoward",
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^9.39.4",
