@@ -70,8 +70,16 @@
   margin-bottom: 4px;
 }
 
+.page-color-prop-group-heading {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-normal);
+  margin: 16px 0 8px 0;
+  padding: 0;
+}
+
 .page-color-prop-rule-number {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-accent);
   white-space: nowrap;

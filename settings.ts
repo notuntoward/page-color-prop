@@ -84,9 +84,10 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     });
 
     if (this.plugin.settings.colorMappings.length > 0) {
-      new Setting(containerEl)
-        .setName(`Color mappings (${this.plugin.settings.colorMappings.length})`)
-        .setHeading();
+      containerEl.createEl('div', {
+        text: `Color mappings (${this.plugin.settings.colorMappings.length})`,
+        cls: 'page-color-prop-group-heading'
+      });
 
       this.plugin.settings.colorMappings.forEach((mapping, index) => {
         this.createMappingSettings(containerEl, mapping, index);
