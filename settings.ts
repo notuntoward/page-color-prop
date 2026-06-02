@@ -341,18 +341,18 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
 		const isAuto = getIsAuto();
 
-		// Color sample display (BEFORE the setting controls)
-		const colorDisplay = colorSettingContainer.createDiv('page-color-prop-color-display');
-		const sampleBox = colorDisplay.createDiv('page-color-prop-sample-box');
-		const currentColor = getColor();
-		const displayColor = this.resolveColorForDisplay(isAuto ? autoDefault : currentColor);
-		sampleBox.style.backgroundColor = displayColor;
-		
-		const modeLabel = colorDisplay.createDiv('page-color-prop-mode-label');
-		modeLabel.setText(isAuto ? 'Auto (from theme)' : 'Manual');
+		const getDisplayColor = () => this.resolveColorForDisplay(getIsAuto() ? autoDefault : getColor());
+		const updateSwatch = () => {
+			const mode = getIsAuto() ? 'Auto from theme' : 'Manual';
+			const displayColor = getDisplayColor();
+
+			sampleBox.style.backgroundColor = displayColor;
+			sampleBox.ariaLabel = `${mode} color: ${displayColor}. Click to choose a manual color.`;
+			sampleBox.title = `${mode}: ${displayColor}`;
+		};
 
 		let colorPickerInput: HTMLInputElement | null = null;
-		const addColorPicker = () => {
+		const addColorPicker = (onChange: (value: string) => void) => {
 			settingEl.addColorPicker(colorPicker => {
 				const currentColor = getColor();
 				const pickerColor = this.resolveColorForPicker(currentColor);
@@ -360,60 +360,69 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 				colorPicker
 					.setValue(pickerColor)
 					.onChange(value => {
-						sampleBox.style.backgroundColor = value;
-						modeLabel.setText('Manual');
-						
-						setColor(value);
-						this.plugin.applyColorsToAllLeaves();
-						this.queueSave();
+						onChange(value);
 					});
 			});
 
 			const colorInputs = colorSettingContainer.querySelectorAll('input[type="color"]');
 			colorPickerInput = colorInputs[colorInputs.length - 1] as HTMLInputElement | null;
+			colorPickerInput?.addClass('page-color-prop-hidden-color-picker');
 		};
+		const openColorPicker = () => {
+			if (!colorPickerInput) return;
+
+			if ('showPicker' in colorPickerInput) {
+				(colorPickerInput as any).showPicker();
+			} else {
+				(colorPickerInput as any).click();
+			}
+		};
+		const sampleBox = settingEl.controlEl.createEl('button', {
+			cls: 'page-color-prop-sample-box',
+			type: 'button'
+		});
+		addColorPicker(value => {
+			setIsAuto(false);
+			setColor(value);
+			updateSwatch();
+			this.plugin.applyColorsToAllLeaves();
+			this.queueSave();
+		});
+		updateSwatch();
 
 		// Toggle button
 		settingEl.addButton(button => {
 			button
 				.setButtonText(isAuto ? 'Use color picker' : 'Use auto color')
 				.onClick(async () => {
-					const wasAuto = getIsAuto();
-					const nowAuto = !wasAuto;
+					const nowAuto = !getIsAuto();
 					setIsAuto(nowAuto);
-					
-					if (nowAuto) {
-						// Keep the last manual color so switching back to manual restores it.
-					} else {
-						if (!colorPickerInput) {
-							addColorPicker();
-						}
-						if (colorPickerInput) {
-							setColor(colorPickerInput.value);
-						}
+
+					if (!nowAuto && colorPickerInput) {
+						setColor(colorPickerInput.value);
 					}
 					
 					await this.plugin.saveSettings();
 
-					const currentDisplayColor = this.resolveColorForDisplay(nowAuto ? autoDefault : getColor());
-					sampleBox.style.backgroundColor = currentDisplayColor;
-					modeLabel.setText(nowAuto ? 'Auto (from theme)' : 'Manual');
+					updateSwatch();
 					button.setButtonText(nowAuto ? 'Use color picker' : 'Use auto color');
-
-					if (wasAuto && !nowAuto) {
-						if (colorPickerInput) {
-							colorPickerInput.style.display = '';
-						}
-					} else if (!wasAuto && nowAuto && colorPickerInput) {
-						colorPickerInput.style.display = 'none';
-					}
+					if (!nowAuto) openColorPicker();
 				});
-		});
 
-		// Color picker (only show if manual mode)
-		if (!isAuto) {
-			addColorPicker();
-		}
+			sampleBox.onClickEvent(async () => {
+				if (getIsAuto()) {
+					setIsAuto(false);
+					if (colorPickerInput) {
+						setColor(colorPickerInput.value);
+					}
+					await this.plugin.saveSettings();
+					updateSwatch();
+					button.setButtonText('Use auto color');
+				}
+
+				openColorPicker();
+			});
+		});
 	}
 
 	private resolveColorForPicker(color: string): string {
