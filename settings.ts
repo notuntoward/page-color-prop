@@ -76,8 +76,13 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 					});
 			});
 
+		containerEl.createDiv({
+			cls: 'page-color-prop-rule-priority-note',
+			text: 'Rule priority: if multiple rules match a note, the lowest matching rule below sets the background. Use ↑ and ↓ to reorder.'
+		});
+
 		if (this.plugin.settings.colorMappings.length > 0) {
-			const mappingsTitle = containerEl.createEl('h3', {
+			containerEl.createEl('h3', {
 				text: `Color Mappings (${this.plugin.settings.colorMappings.length})`,
 				cls: 'page-color-prop-section-title'
 			});
@@ -136,6 +141,18 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 
 	private createMappingSettings(containerEl: HTMLElement, mapping: PropertyColorMapping, index: number) {
 		const mappingCard = containerEl.createDiv('page-color-prop-mapping-card');
+		const mappingHeader = mappingCard.createDiv('page-color-prop-mapping-header');
+		mappingHeader.createSpan({
+			text: `Rule ${index + 1}`,
+			cls: 'page-color-prop-rule-number'
+		});
+		const mappingSummary = mappingHeader.createSpan('page-color-prop-rule-summary');
+		const updateSummary = () => {
+			const property = mapping.property || 'property';
+			const value = mapping.value || 'value';
+			mappingSummary.setText(`${property} ${mapping.matchType || 'exact'} ${value}`);
+		};
+		updateSummary();
 
 		new Setting(mappingCard)
 			.setName('Property')
@@ -143,6 +160,7 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 			.addText(text => {
 				text.setValue(mapping.property || '').onChange(value => {
 					mapping.property = value;
+					updateSummary();
 					this.plugin.saveSettings();
 				});
 				text.inputEl.disabled = false;
@@ -154,6 +172,7 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 			.addText(text => {
 				text.setValue(mapping.value || '').onChange(value => {
 					mapping.value = value;
+					updateSummary();
 					this.plugin.saveSettings();
 				});
 				text.inputEl.disabled = false;
@@ -169,6 +188,7 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 					.setValue(mapping.matchType || 'exact')
 					.onChange(value => {
 						mapping.matchType = value as 'exact' | 'contains';
+						updateSummary();
 						this.plugin.saveSettings();
 					});
 			});
@@ -457,19 +477,69 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 			.page-color-prop-mapping-card {
 				border: 1px solid var(--background-modifier-border);
 				border-radius: 4px;
-				padding: 16px;
-				margin-bottom: 16px;
+				padding: 10px 12px;
+				margin-bottom: 8px;
 				background-color: var(--background-secondary);
+			}
+
+			.page-color-prop-mapping-card .setting-item {
+				padding: 6px 0;
+			}
+
+			.page-color-prop-mapping-card .setting-item-name {
+				font-size: 13px;
+			}
+
+			.page-color-prop-mapping-card .setting-item-description {
+				font-size: 12px;
+				line-height: 1.3;
+			}
+
+			.page-color-prop-mapping-card .setting-item-control input,
+			.page-color-prop-mapping-card .setting-item-control select {
+				min-height: 28px;
+			}
+
+			.page-color-prop-mapping-header {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				margin-bottom: 4px;
+			}
+
+			.page-color-prop-rule-number {
+				font-size: 12px;
+				font-weight: 700;
+				color: var(--text-accent);
+				white-space: nowrap;
+			}
+
+			.page-color-prop-rule-summary {
+				font-size: 12px;
+				color: var(--text-muted);
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+
+			.page-color-prop-rule-priority-note {
+				margin: 8px 0 12px;
+				padding: 8px 10px;
+				border-left: 3px solid var(--interactive-accent);
+				background-color: var(--background-secondary);
+				color: var(--text-muted);
+				font-size: 13px;
+				line-height: 1.35;
 			}
 			
 			.page-color-prop-section-title {
-				margin-top: 24px;
-				margin-bottom: 16px;
+				margin-top: 14px;
+				margin-bottom: 8px;
 				font-weight: 600;
 			}
 			
 			.page-color-prop-description {
-				margin-bottom: 24px;
+				margin-bottom: 10px;
 				color: var(--text-muted);
 				font-size: 14px;
 			}
@@ -486,21 +556,21 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 			
 			.page-color-prop-color-setting-container {
 				border-top: 1px solid var(--background-modifier-border);
-				padding-top: 16px;
-				margin-top: 16px;
+				padding-top: 8px;
+				margin-top: 6px;
 			}
 			
 			.page-color-prop-color-display {
 				display: flex;
 				align-items: center;
-				gap: 12px;
-				padding: 0 0 12px 0;
-				margin-bottom: 8px;
+				gap: 8px;
+				padding: 0 0 4px 0;
+				margin-bottom: 2px;
 			}
 			
 			.page-color-prop-sample-box {
-				width: 50px;
-				height: 50px;
+				width: 32px;
+				height: 32px;
 				border-radius: 4px;
 				border: 2px solid var(--background-modifier-border);
 				box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
@@ -516,13 +586,13 @@ Click "Add New Mapping" above to create your first property-to-color mapping.
 			
 			@media (max-width: 768px) {
 				.page-color-prop-mapping-card {
-					padding: 12px;
-					margin-bottom: 12px;
+					padding: 8px;
+					margin-bottom: 8px;
 				}
 				
 				.page-color-prop-sample-box {
-					width: 40px;
-					height: 40px;
+					width: 30px;
+					height: 30px;
 				}
 			}
 		`;

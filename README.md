@@ -101,25 +101,7 @@ More than one mapping can apply to the same note. For example, a note might have
 
 -----
 
-## How to Install
 
-### Manual Installation
-
-1.  Download the `main.js`, `styles.css`, and `manifest.json` files from the [latest release](https://www.google.com/search?q=https://github.com/YOUR_USERNAME/obsidian-page-color-prop/releases/latest) on GitHub.
-2.  Find your Obsidian vault's plugin folder. This is usually `.obsidian/plugins/` in the root of your vault.
-3.  Create a new folder inside `plugins` named `page-color-prop`.
-4.  Copy the three downloaded files into this new folder.
-5.  Reload Obsidian (or close and re-open it).
-6.  Go to **Settings** \> **Community plugins**, find "Page Color Prop", and **Enable** it.
-
-### SOMEDAY BUT NOT YET: From the Community Plugin Browser (Recommended)
-
-1.  Open **Settings** in Obsidian.
-2.  Go to **Community plugins** \> **Browse**.
-3.  Search for "Page Color Prop".
-4.  Click **Install**, then click **Enable**.
-5.  
------
 
 ## Contributing
 
