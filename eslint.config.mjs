@@ -7,6 +7,7 @@ export default [
 		ignores: [
 			'node_modules/**',
 			'dist/**',
+			'coverage/**',
 			'main.js'
 		]
 	},
@@ -50,6 +51,22 @@ export default [
 			'obsidianmd/regex-lookbehind': 'error',
 			'obsidianmd/validate-license': 'error',
 			'obsidianmd/validate-manifest': 'error'
+		}
+	},
+	{
+		files: ['tests/**/*.ts', 'vitest.config.ts'],
+		languageOptions: {
+			parser: tseslint.parser,
+			parserOptions: {
+				project: './tsconfig.json',
+				tsconfigRootDir: import.meta.dirname
+			},
+			globals: {
+				...globals.browser,
+				...globals.node,
+				...globals.es2021,
+				vitest: 'readonly'
+			}
 		}
 	}
 ];

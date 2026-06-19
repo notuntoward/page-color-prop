@@ -7,15 +7,23 @@
 
 .page-color-prop-active.workspace-leaf-content[data-type="markdown"] .view-content,
 .page-color-prop-active.workspace-leaf-content[data-type="markdown"] .markdown-source-view,
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] .markdown-reading-view,
 .page-color-prop-active.workspace-leaf-content[data-type="markdown"] .markdown-preview-view,
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] .markdown-preview-section,
 .page-color-prop-active.workspace-leaf-content[data-type="markdown"] .cm-editor,
 .page-color-prop-active.workspace-leaf-content[data-type="markdown"] .cm-scroller,
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] .cm-sizer,
+.page-color-prop-active.workspace-leaf-content[data-type="markdown"] .cm-content,
 .page-color-prop-active.workspace-leaf-content[data-type="markdown"] .markdown-preview-sizer,
 .page-color-prop-active .workspace-leaf-content[data-type="markdown"] .view-content,
 .page-color-prop-active .workspace-leaf-content[data-type="markdown"] .markdown-source-view,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] .markdown-reading-view,
 .page-color-prop-active .workspace-leaf-content[data-type="markdown"] .markdown-preview-view,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] .markdown-preview-section,
 .page-color-prop-active .workspace-leaf-content[data-type="markdown"] .cm-editor,
 .page-color-prop-active .workspace-leaf-content[data-type="markdown"] .cm-scroller,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] .cm-sizer,
+.page-color-prop-active .workspace-leaf-content[data-type="markdown"] .cm-content,
 .page-color-prop-active .workspace-leaf-content[data-type="markdown"] .markdown-preview-sizer {
   background: transparent !important;
 }
