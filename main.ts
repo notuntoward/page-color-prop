@@ -46,6 +46,10 @@ export default class PageColorPropPlugin extends Plugin {
 			this.app.workspace.on('layout-change', this.onLayoutChange.bind(this))
 		);
 
+		this.registerEvent(
+			this.app.workspace.on('file-open', this.onFileOpen.bind(this))
+		);
+
 		// Initialize theme state
 		this.updateThemeState();
 
@@ -198,6 +202,11 @@ export default class PageColorPropPlugin extends Plugin {
 
 	private onLayoutChange() {
 		// When layout changes (split, close pane, etc.), reapply colors
+		this.applyColorsToAllLeaves();
+	}
+
+	private onFileOpen() {
+		// When a file is opened in a leaf (e.g., via Quick Switcher++), reapply colors
 		this.applyColorsToAllLeaves();
 	}
 

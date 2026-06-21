@@ -118,12 +118,12 @@ describe('PageColorPropPlugin', () => {
 
     expect(plugin.loadSettings).toHaveBeenCalledTimes(1);
     expect(plugin.addSettingTab).toHaveBeenCalledTimes(1);
-    expect(workspace.on).toHaveBeenCalledTimes(2);
+    expect(workspace.on).toHaveBeenCalledTimes(3);
     expect(metadataCache.on).toHaveBeenCalledTimes(1);
-    expect(plugin.registerEvent).toHaveBeenCalledTimes(3);
+    expect(plugin.registerEvent).toHaveBeenCalledTimes(4);
     expect(plugin.updateThemeState).toHaveBeenCalledTimes(1);
     expect(plugin.registerThemeChangeListener).toHaveBeenCalledTimes(1);
-    expect(plugin.applyColorsToAllLeaves).toHaveBeenCalledTimes(4);
+    expect(plugin.applyColorsToAllLeaves).toHaveBeenCalledTimes(5);
   });
 
   it('removes styles and disconnects the theme observer when unloaded', () => {
@@ -376,15 +376,16 @@ describe('PageColorPropPlugin', () => {
     expect(plugin.applyColorsToAllLeaves).toHaveBeenCalledTimes(1);
   });
 
-  it('reapplies colors for active leaf, metadata, and layout changes', () => {
+  it('reapplies colors for active leaf, metadata, layout, and file-open events', () => {
     const plugin = createPlugin();
     plugin.applyColorsToAllLeaves = vi.fn();
 
     plugin.onActiveLeafChange({} as any);
     plugin.onMetadataChanged({ path: 'note.md' } as any);
     plugin.onLayoutChange();
+    plugin.onFileOpen();
 
-    expect(plugin.applyColorsToAllLeaves).toHaveBeenCalledTimes(3);
+    expect(plugin.applyColorsToAllLeaves).toHaveBeenCalledTimes(4);
   });
 
   it('updates theme state from the document body', () => {
