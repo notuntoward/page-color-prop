@@ -25,6 +25,7 @@ function createPlugin(overrides: Partial<PageColorPropSettings> = {}) {
   };
   plugin.isDarkTheme = false;
   plugin.multipleMatchNoticeKeys = new Set<string>();
+  plugin.pendingRetryHandles = new Set<number>();
   plugin.app = {
     workspace: {
       getLeavesOfType: vi.fn(() => [])
@@ -304,12 +305,81 @@ describe('PageColorPropPlugin', () => {
       .mockReturnValueOnce(null)
       .mockReturnValueOnce({ frontmatter: { tags: ['research'] } });
 
-    plugin.applyColorsToAllLeaves();
+    // Pass 0 retries so the unready-metadata leaf does not schedule a timer.
+    plugin.applyColorsToAllLeaves(0);
 
     expect(plugin.app.metadataCache.getFileCache).toHaveBeenCalledTimes(2);
     expect(leafWithoutFile.view.containerEl.classList.contains('page-color-prop-active')).toBe(false);
     expect(leafWithoutMetadata.view.containerEl.classList.contains('page-color-prop-active')).toBe(false);
     expect(leafWithoutMatch.view.containerEl.classList.contains('page-color-prop-active')).toBe(false);
+  });
+
+  it('retries applying colors when metadata is not yet cached', () => {
+    vi.useFakeTimers();
+    try {
+      const file = { path: 'note.md', basename: 'note' };
+      const leaf = createLeaf(file);
+      const plugin = createPlugin({
+        colorMappings: [mapping({ colorLight: '#4e66d0', isAutoLight: false })]
+      });
+      plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+      // First call: metadata not ready. After the retry: metadata is ready.
+      plugin.app.metadataCache.getFileCache
+        .mockReturnValueOnce(null)
+        .mockReturnValue({ frontmatter: { tags: ['ai-generated'] } });
+
+      plugin.applyColorsToAllLeaves();
+
+      // Not colored yet - metadata was not ready and a retry is scheduled.
+      expect(leaf.view.containerEl.classList.contains('page-color-prop-active')).toBe(false);
+      expect(plugin.pendingRetryHandles.size).toBe(1);
+
+      vi.runAllTimers();
+
+      // Retry found the metadata and applied the color.
+      expect(leaf.view.containerEl.classList.contains('page-color-prop-active')).toBe(true);
+      expect(leaf.view.containerEl.style.getPropertyValue('--page-color-prop-background')).toBe('#4e66d0');
+      expect(plugin.pendingRetryHandles.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops retrying after the retry limit is exhausted', () => {
+    vi.useFakeTimers();
+    try {
+      const file = { path: 'note.md', basename: 'note' };
+      const leaf = createLeaf(file);
+      const plugin = createPlugin();
+      plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+      // Metadata never becomes ready.
+      plugin.app.metadataCache.getFileCache.mockReturnValue(null);
+
+      plugin.applyColorsToAllLeaves();
+      vi.runAllTimers();
+
+      // 1 initial call + 3 retries = 4 lookups, then it gives up.
+      expect(plugin.app.metadataCache.getFileCache).toHaveBeenCalledTimes(4);
+      expect(plugin.pendingRetryHandles.size).toBe(0);
+      expect(leaf.view.containerEl.classList.contains('page-color-prop-active')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('removes stale color when a file no longer has frontmatter', () => {
+    const file = { path: 'note.md', basename: 'note' };
+    const leaf = createLeaf(file);
+    leaf.view.containerEl.classList.add('page-color-prop-active');
+    leaf.view.containerEl.style.setProperty('--page-color-prop-background', '#4e66d0');
+    const plugin = createPlugin();
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+    plugin.app.metadataCache.getFileCache.mockReturnValue({});
+
+    plugin.applyColorsToAllLeaves();
+
+    expect(leaf.view.containerEl.classList.contains('page-color-prop-active')).toBe(false);
+    expect(leaf.view.containerEl.style.getPropertyValue('--page-color-prop-background')).toBe('');
   });
 
   it('does not apply invalid colors', () => {

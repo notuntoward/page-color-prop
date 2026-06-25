@@ -26,6 +26,7 @@ export default class PageColorPropPlugin extends Plugin {
 	private isDarkTheme: boolean = false;
 	private themeObserver: MutationObserver | null = null;
 	private multipleMatchNoticeKeys: Set<string> = new Set();
+	private pendingRetryHandles: Set<number> = new Set();
 
 	async onload() {
 		await this.loadSettings();
@@ -62,9 +63,15 @@ export default class PageColorPropPlugin extends Plugin {
 
 	onunload() {
 		this.removeAllStyles();
+		this.clearPendingRetries();
 		if (this.themeObserver) {
 			this.themeObserver.disconnect();
 		}
+	}
+
+	private clearPendingRetries() {
+		this.pendingRetryHandles.forEach(handle => window.clearTimeout(handle));
+		this.pendingRetryHandles.clear();
 	}
 
 	async loadSettings() {
@@ -210,31 +217,80 @@ export default class PageColorPropPlugin extends Plugin {
 		this.applyColorsToAllLeaves();
 	}
 
-	public applyColorsToAllLeaves() {
-		this.removeAllStyles();
-
+	public applyColorsToAllLeaves(retriesLeft: number = 3) {
 		const leaves = this.app.workspace.getLeavesOfType('markdown');
-		
+		let needsRetry = false;
+		// Elements whose color must be preserved during the stale-style sweep:
+		// either we just colored them, or their metadata isn't ready yet.
+		const protectedElements = new Set<HTMLElement>();
+
 		leaves.forEach((leaf) => {
 			if (!(leaf.view instanceof MarkdownView)) return;
 
 			const file = leaf.view.file;
 			if (!file) return;
 
+			const targetEl = this.getLeafTargetEl(leaf);
+
 			const metadata = this.app.metadataCache.getFileCache(file);
-			if (!metadata?.frontmatter) return;
+			if (!metadata) {
+				// Metadata cache not populated yet for this file. This happens when a
+				// note is opened before Obsidian finishes parsing it. Don't strip the
+				// existing color, and schedule a retry in case the metadataCache
+				// 'changed' event does not fire (e.g. the cache is reused/unchanged).
+				needsRetry = true;
+				if (targetEl) protectedElements.add(targetEl);
+				return;
+			}
+
+			// metadata exists but has no frontmatter: the file genuinely has no
+			// frontmatter, so remove any stale color.
+			if (!metadata.frontmatter) {
+				this.removeBackgroundColorFromLeaf(leaf);
+				return;
+			}
 
 			const matchResult = this.findMatchingColorMappings(metadata.frontmatter);
 			const colorMapping = matchResult.selected?.mapping;
-			if (!colorMapping) return;
 
-			this.notifyIfMultipleMappingsMatch(file, matchResult.matches);
+			if (colorMapping) {
+				this.notifyIfMultipleMappingsMatch(file, matchResult.matches);
 
-			const color = this.getMappingColor(colorMapping);
-			if (color) {
-				this.applyBackgroundColorToLeaf(leaf, color);
+				const color = this.getMappingColor(colorMapping);
+				if (color && this.isValidColor(color)) {
+					this.applyBackgroundColorToLeaf(leaf, color);
+					if (targetEl) protectedElements.add(targetEl);
+				} else {
+					// Invalid color - remove any existing color
+					this.removeBackgroundColorFromLeaf(leaf);
+				}
+			} else {
+				// No mapping matches - remove color from this leaf
+				this.removeBackgroundColorFromLeaf(leaf);
 			}
 		});
+
+		// Sweep away stale styles left on elements that are no longer active
+		// markdown leaves (e.g. closed panes, views switched to non-markdown),
+		// without touching elements we are intentionally keeping colored.
+		this.removeStaleStyles(protectedElements);
+
+		// Only schedule a retry if one isn't already in flight. Multiple workspace
+		// events can fire in quick succession while a note's metadata is still
+		// parsing; without this guard each would spawn its own overlapping retry
+		// chain doing redundant full-workspace scans.
+		if (needsRetry && retriesLeft > 0 && this.pendingRetryHandles.size === 0) {
+			const handle = window.setTimeout(() => {
+				this.pendingRetryHandles.delete(handle);
+				this.applyColorsToAllLeaves(retriesLeft - 1);
+			}, 100);
+			this.pendingRetryHandles.add(handle);
+		}
+	}
+
+	private getLeafTargetEl(leaf: WorkspaceLeaf): HTMLElement | null {
+		const targetEl = leaf.view.containerEl.querySelector('.workspace-leaf-content[data-type="markdown"]') ?? leaf.view.containerEl;
+		return targetEl.instanceOf(HTMLElement) ? targetEl : null;
 	}
 
 	private getMappingColor(mapping: PropertyColorMapping): string {
@@ -304,20 +360,32 @@ export default class PageColorPropPlugin extends Plugin {
 			return;
 		}
 
-		const targetEl = leaf.view.containerEl.querySelector('.workspace-leaf-content[data-type="markdown"]') ?? leaf.view.containerEl;
-		if (!targetEl.instanceOf(HTMLElement)) return;
+		const targetEl = this.getLeafTargetEl(leaf);
+		if (!targetEl) return;
 
 		targetEl.addClass('page-color-prop-active');
 		targetEl.style.setProperty('--page-color-prop-background', color);
 	}
 
-	private removeAllStyles() {
+	private removeBackgroundColorFromLeaf(leaf: WorkspaceLeaf) {
+		const targetEl = this.getLeafTargetEl(leaf);
+		if (!targetEl) return;
+
+		targetEl.removeClass('page-color-prop-active');
+		targetEl.style.removeProperty('--page-color-prop-background');
+	}
+
+	private removeStaleStyles(protectedElements: Set<HTMLElement>) {
 		document.querySelectorAll('.page-color-prop-active').forEach(el => {
-			if (el.instanceOf(HTMLElement)) {
+			if (el.instanceOf(HTMLElement) && !protectedElements.has(el)) {
 				el.removeClass('page-color-prop-active');
 				el.style.removeProperty('--page-color-prop-background');
 			}
 		});
+	}
+
+	private removeAllStyles() {
+		this.removeStaleStyles(new Set());
 	}
 
 	isValidColor(color: string): boolean {
