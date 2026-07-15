@@ -7,6 +7,7 @@ import {
 	PageColorPropSettingTab,
 	PropertyColorMapping
 } from './settings';
+import { DEFAULT_LINK_TUNING } from './color-optimizer';
 
 type FrontmatterValue = string | number | boolean | null | undefined | FrontmatterValue[];
 type Frontmatter = Record<string, FrontmatterValue>;
@@ -82,7 +83,8 @@ export default class PageColorPropPlugin extends Plugin {
 		} else {
 			this.settings = {
 				colorMappings: loadedData.colorMappings.filter(this.isValidMapping),
-				notifyOnMultipleMatches: loadedData.notifyOnMultipleMatches ?? DEFAULT_SETTINGS.notifyOnMultipleMatches
+				notifyOnMultipleMatches: loadedData.notifyOnMultipleMatches ?? DEFAULT_SETTINGS.notifyOnMultipleMatches,
+				experimentalLinkTuning: { ...DEFAULT_LINK_TUNING, ...(loadedData.experimentalLinkTuning ?? {}) }
 			};
 		}
 
@@ -145,10 +147,34 @@ export default class PageColorPropPlugin extends Plugin {
 				mapping.isAutoDark = false;
 				needsSave = true;
 			}
+
+			// Migrate link-color fields: default to auto-mode (empty stored
+			// hex; the optimizer will fill it in on first display()).
+			if (mapping.linkColorLight === undefined) {
+				mapping.linkColorLight = '';
+				needsSave = true;
+			}
+			if (mapping.linkColorDark === undefined) {
+				mapping.linkColorDark = '';
+				needsSave = true;
+			}
+			if (mapping.isAutoLinkLight === undefined) {
+				mapping.isAutoLinkLight = true;
+				needsSave = true;
+			}
+			if (mapping.isAutoLinkDark === undefined) {
+				mapping.isAutoLinkDark = true;
+				needsSave = true;
+			}
 		});
 
 		if (this.settings.notifyOnMultipleMatches === undefined) {
 			this.settings.notifyOnMultipleMatches = DEFAULT_SETTINGS.notifyOnMultipleMatches;
+			needsSave = true;
+		}
+
+		if (!this.settings.experimentalLinkTuning) {
+			this.settings.experimentalLinkTuning = { ...DEFAULT_LINK_TUNING };
 			needsSave = true;
 		}
 

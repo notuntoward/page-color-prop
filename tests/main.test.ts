@@ -13,6 +13,10 @@ function mapping(overrides: Partial<PropertyColorMapping> = {}): PropertyColorMa
     isAutoLight: false,
     isAutoDark: true,
     matchType: 'contains',
+    linkColorLight: '#1a5fb4',
+    linkColorDark: '#62a0ea',
+    isAutoLinkLight: true,
+    isAutoLinkDark: true,
     ...overrides
   };
 }
@@ -79,7 +83,12 @@ describe('PageColorPropPlugin', () => {
 
     expect(plugin.settings).toEqual({
       colorMappings: [],
-      notifyOnMultipleMatches: true
+      notifyOnMultipleMatches: true,
+      experimentalLinkTuning: {
+        hueStepDegrees: 15,
+        minDeltaE: 0.12,
+        minContrast: 4.5
+      }
     });
     expect(plugin.saveSettings).not.toHaveBeenCalled();
 

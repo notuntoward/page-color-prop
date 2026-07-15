@@ -1,5 +1,6 @@
-import { App, Debouncer, debounce, Modal, PluginSettingTab, Setting } from 'obsidian';
+import { App, Debouncer, debounce, Modal, PluginSettingTab, setIcon, Setting } from 'obsidian';
 import type PageColorPropPlugin from './main';
+import { ColorOptimizer, DEFAULT_LINK_TUNING, type LinkColorTuning } from './color-optimizer';
 
 export interface PropertyColorMapping {
   property: string;
@@ -9,11 +10,16 @@ export interface PropertyColorMapping {
   isAutoLight: boolean;
   isAutoDark: boolean;
   matchType: 'exact' | 'contains';
+  linkColorLight: string;
+  linkColorDark: string;
+  isAutoLinkLight: boolean;
+  isAutoLinkDark: boolean;
 }
 
 export interface PageColorPropSettings {
   colorMappings: PropertyColorMapping[];
   notifyOnMultipleMatches: boolean;
+  experimentalLinkTuning: LinkColorTuning;
 }
 
 export const DEFAULT_LIGHT_AUTO_COLOR = 'hsla(var(--accent-h), var(--accent-s), 90%, 0.35)';
@@ -22,7 +28,8 @@ export const DEFAULT_DARK_AUTO_COLOR = 'hsla(var(--accent-h), var(--accent-s), 2
 // EMPTY defaults - no example mappings!
 export const DEFAULT_SETTINGS: PageColorPropSettings = {
   colorMappings: [],
-  notifyOnMultipleMatches: true
+  notifyOnMultipleMatches: true,
+  experimentalLinkTuning: { ...DEFAULT_LINK_TUNING }
 };
 
 export class PageColorPropSettingTab extends PluginSettingTab {
@@ -59,12 +66,19 @@ export class PageColorPropSettingTab extends PluginSettingTab {
               colorDark: DEFAULT_DARK_AUTO_COLOR,
               isAutoLight: true,
               isAutoDark: true,
-              matchType: 'exact'
+              matchType: 'exact',
+              linkColorLight: '',
+              linkColorDark: '',
+              isAutoLinkLight: true,
+              isAutoLinkDark: true
             });
             await this.plugin.saveSettings();
             this.display();
           });
       });
+
+    // TEMPORARY — remove once algorithm parameters are finalized
+    this.createExperimentalTuningSection(containerEl);
 
     new Setting(containerEl)
       .setName('Notify when multiple rules match')
@@ -221,76 +235,55 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           });
       });
 
-    // Light Theme Color Setting
-    this.createThemeColorSetting(
-      mappingCard,
-      'Light theme background',
-      'Color for light-mode backgrounds',
-      mapping,
-      'Light'
-    );
+    // Table replaces the two separate light/dark theme-group blocks.
+    // Row label appears once per theme; column header appears once per role
+    // — this removes the previously duplicated "Color for light/dark-mode..."
+    // description text.
+    const table = this.createRuleColorTable(mappingCard, mapping);
+    const tbody = table.createEl('tbody');
 
-    // Dark Theme Color Setting
-    this.createThemeColorSetting(
-      mappingCard,
-      'Dark theme background',
-      'Color for dark-mode backgrounds',
-      mapping,
-      'Dark'
-    );
+    this.createThemeTableRow(tbody, mapping, 'Light');
+    this.createThemeTableRow(tbody, mapping, 'Dark');
 
-    new Setting(mappingCard)
-      .addButton(button => {
-        button.setButtonText('Duplicate').onClick(async () => {
-          const duplicateIndex = index + 1;
-          this.plugin.settings.colorMappings.splice(duplicateIndex, 0, {
-            ...JSON.parse(JSON.stringify(mapping))
-          });
-          await this.plugin.saveSettings();
-          this.display();
-          this.scrollToMapping(duplicateIndex);
-        });
-      })
-      .addButton(button => {
-        button
-          .setButtonText('Move up')
-          .onClick(async () => {
-            if (index > 0) {
-              [this.plugin.settings.colorMappings[index], this.plugin.settings.colorMappings[index - 1]] = [
-                this.plugin.settings.colorMappings[index - 1],
-                this.plugin.settings.colorMappings[index]
-              ];
-              await this.plugin.saveSettings();
-              this.display();
-            }
-          });
-        button.buttonEl.disabled = index === 0;
-      })
-      .addButton(button => {
-        button
-          .setButtonText('Move down')
-          .onClick(async () => {
-            if (index < this.plugin.settings.colorMappings.length - 1) {
-              [this.plugin.settings.colorMappings[index], this.plugin.settings.colorMappings[index + 1]] = [
-                this.plugin.settings.colorMappings[index + 1],
-                this.plugin.settings.colorMappings[index]
-              ];
-              await this.plugin.saveSettings();
-              this.display();
-            }
-          });
-        button.buttonEl.disabled = index === this.plugin.settings.colorMappings.length - 1;
-      })
-      .addButton(button => {
-        button
-          .setButtonText('Delete')
-          .setWarning()
-          .onClick(async () => {
-            this.plugin.settings.colorMappings.splice(index, 1);
-            await this.plugin.saveSettings();
-            this.display();
-          });
+    const footer = mappingCard.createDiv('page-color-prop-mapping-footer');
+
+    this.createFooterButton(footer, 'copy', 'Duplicate', async () => {
+      const duplicateIndex = index + 1;
+      this.plugin.settings.colorMappings.splice(duplicateIndex, 0, {
+        ...JSON.parse(JSON.stringify(mapping))
       });
+      await this.plugin.saveSettings();
+      this.display();
+      this.scrollToMapping(duplicateIndex);
+    });
+
+    this.createFooterButton(footer, 'chevron-up', 'Move up', async () => {
+      if (index > 0) {
+        [this.plugin.settings.colorMappings[index], this.plugin.settings.colorMappings[index - 1]] = [
+          this.plugin.settings.colorMappings[index - 1],
+          this.plugin.settings.colorMappings[index]
+        ];
+        await this.plugin.saveSettings();
+        this.display();
+      }
+    }, { disabled: index === 0 });
+
+    this.createFooterButton(footer, 'chevron-down', 'Move down', async () => {
+      if (index < this.plugin.settings.colorMappings.length - 1) {
+        [this.plugin.settings.colorMappings[index], this.plugin.settings.colorMappings[index + 1]] = [
+          this.plugin.settings.colorMappings[index + 1],
+          this.plugin.settings.colorMappings[index]
+        ];
+        await this.plugin.saveSettings();
+        this.display();
+      }
+    }, { disabled: index === this.plugin.settings.colorMappings.length - 1 });
+
+    this.createFooterButton(footer, 'trash-2', 'Delete', async () => {
+      this.plugin.settings.colorMappings.splice(index, 1);
+      await this.plugin.saveSettings();
+      this.display();
+    }, { warning: true });
   }
 
   private scrollToMapping(index: number) {
@@ -303,12 +296,76 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     });
   }
 
+  private createFooterButton(
+    container: HTMLElement,
+    icon: string,
+    label: string,
+    onClick: () => void | Promise<void>,
+    opts: { warning?: boolean; disabled?: boolean } = {}
+  ): HTMLButtonElement {
+    const btn = container.createEl('button', { cls: 'page-color-prop-footer-btn' });
+    if (opts.warning) {
+      btn.addClass('mod-warning');
+    }
+    if (opts.disabled) {
+      btn.disabled = true;
+      btn.setAttr('aria-disabled', 'true');
+    }
+
+    const iconSpan = btn.createSpan('page-color-prop-footer-btn-icon');
+    setIcon(iconSpan, icon);
+
+    btn.createSpan({ cls: 'page-color-prop-footer-btn-label', text: label });
+
+    btn.setAttr('aria-label', label);
+    btn.setAttr('title', label);
+    btn.onclick = () => {
+      if (!btn.disabled) onClick();
+    };
+    return btn;
+  }
+
+  private createRuleColorTable(mappingCard: HTMLElement, mapping: PropertyColorMapping): HTMLTableElement {
+    const table = mappingCard.createEl('table', { cls: 'page-color-prop-rule-table' });
+
+    // Explicit column widths: prevents the browser from auto-sizing columns
+    // based on cell content, which was causing the Link column (wide preview
+    // box) to have uneven left/right spacing compared to the Background
+    // column (small swatch). Percentages are relative to the table's own
+    // width, which is already set to 100% of the card.
+    const colgroup = table.createEl('colgroup');
+    colgroup.createEl('col', { attr: { style: 'width: 15%;' } });
+    colgroup.createEl('col', { attr: { style: 'width: 25%;' } });
+    colgroup.createEl('col', { attr: { style: 'width: 60%;' } });
+
+    const thead = table.createEl('thead');
+    const headerRow = thead.createEl('tr');
+    headerRow.createEl('th', { text: 'Theme' });
+    headerRow.createEl('th', { text: 'Background' });
+    headerRow.createEl('th', { text: 'Link' });
+
+    return table;
+  }
+
+  private createThemeTableRow(tbody: HTMLTableSectionElement, mapping: PropertyColorMapping, themeType: 'Light' | 'Dark') {
+    const row = tbody.createEl('tr');
+
+    row.createEl('td', { text: themeType, cls: 'page-color-prop-theme-row-label' });
+
+    const bgCell = row.createEl('td');
+    this.createThemeColorSetting(bgCell, '', '', mapping, themeType, true);
+
+    const linkCell = row.createEl('td');
+    this.createThemeLinkColorSetting(linkCell, '', '', mapping, themeType, true);
+  }
+
   private createThemeColorSetting(
     containerEl: HTMLElement,
     name: string,
     desc: string,
     mapping: PropertyColorMapping,
-    themeType: 'Light' | 'Dark'
+    themeType: 'Light' | 'Dark',
+    compact = false
   ) {
     const isLight = themeType === 'Light';
     const autoDefault = isLight
@@ -317,8 +374,10 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     const colorSettingContainer = containerEl.createDiv('page-color-prop-color-setting-container');
     const settingEl = new Setting(colorSettingContainer);
-    settingEl.setName(name);
-    settingEl.setDesc(desc);
+    if (!compact) {
+      settingEl.setName(name);
+      settingEl.setDesc(desc);
+    }
 
     const getIsAuto = () => isLight ? mapping.isAutoLight : mapping.isAutoDark;
     const getColor = () => isLight ? mapping.colorLight : mapping.colorDark;
@@ -344,7 +403,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       const mode = getIsAuto() ? 'Auto from theme' : 'Manual';
       const displayColor = getDisplayColor();
       sampleBox.style.backgroundColor = displayColor;
-      sampleBox.ariaLabel = `${mode} color: ${displayColor}. Click to choose a manual color.`;
+      sampleBox.ariaLabel = `${mode} color: ${displayColor}. Click to open color picker.`;
       sampleBox.title = `${mode}: ${displayColor}`;
     };
 
@@ -382,23 +441,28 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       this.queueSave();
     });
 
-    // Toggle button — added before swatch so swatch ends up on the right
+    // Icon-toggle button — shows the ACTION available, not the current state
+    // (per spec section 1).  pipette = currently Auto, click to switch to
+    // manual picking.  sparkles = currently Manual, click to switch to Auto.
+    let toggleBtnComponent: any = null;
     settingEl.addButton(button => {
-      button
-        .setButtonText(isAuto ? 'Use color picker' : 'Use auto color')
-        .onClick(async () => {
-          const nowAuto = !getIsAuto();
-          setIsAuto(nowAuto);
+      toggleBtnComponent = button;
+      button.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
+      button.setTooltip(getIsAuto() ? 'Switch to manual color' : 'Switch to auto color');
+      button.onClick(async () => {
+        const nowAuto = !getIsAuto();
+        setIsAuto(nowAuto);
 
-          if (!nowAuto && colorPickerInput) {
-            setColor(colorPickerInput.value);
-          }
+        if (!nowAuto && colorPickerInput) {
+          setColor(colorPickerInput.value);
+        }
 
-          await this.plugin.saveSettings();
-          updateSwatch();
-          button.setButtonText(nowAuto ? 'Use color picker' : 'Use auto color');
-          if (!nowAuto) openColorPicker();
-        });
+        await this.plugin.saveSettings();
+        updateSwatch();
+        button.setIcon(nowAuto ? 'pipette' : 'sparkles');
+        button.setTooltip(nowAuto ? 'Switch to manual color' : 'Switch to auto color');
+        if (!nowAuto) openColorPicker();
+      });
     });
 
     // Swatch — appended after the button so it sits to the right
@@ -416,11 +480,301 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         }
         await this.plugin.saveSettings();
         updateSwatch();
-        const toggleBtn = settingEl.controlEl.querySelector('button:not(.page-color-prop-sample-box)') as HTMLButtonElement | null;
-        if (toggleBtn) toggleBtn.textContent = 'Use auto color';
+        if (toggleBtnComponent) {
+          toggleBtnComponent.setIcon('sparkles');
+          toggleBtnComponent.setTooltip('Switch to auto color');
+        }
       }
       openColorPicker();
     });
+  }
+
+  private createExperimentalTuningSection(containerEl: HTMLElement) {
+    // TEMPORARY — remove once algorithm parameters are finalized
+    const section = containerEl.createDiv('page-color-prop-experimental');
+    const heading = section.createDiv('page-color-prop-experimental-heading');
+    heading.createEl('strong', { text: 'Experimental: auto-color tuning' });
+    heading.createEl('p', {
+      text: 'Temporary sliders for tuning the auto link-color algorithm. Delete this block once values are locked in.',
+      cls: 'page-color-prop-experimental-desc'
+    });
+
+    const tuning = this.plugin.settings.experimentalLinkTuning;
+    if (!tuning) {
+      this.plugin.settings.experimentalLinkTuning = { ...DEFAULT_LINK_TUNING };
+    }
+    const t = this.plugin.settings.experimentalLinkTuning;
+
+    new Setting(section)
+      .setName('Hue offset step (degrees)')
+      .setDesc('How far to rotate the hue between search attempts when constraints fail')
+      .addSlider(slider => slider
+        .setLimits(5, 60, 1)
+        .setValue(t.hueStepDegrees)
+        .setDynamicTooltip()
+        .onChange(async value => {
+          t.hueStepDegrees = value;
+          await this.plugin.saveSettings();
+          this.display();
+        }));
+
+    new Setting(section)
+      .setName('Minimum link distinctness (Delta E)')
+      .setDesc('Minimum perceptual distance a link must have from body text and the theme default link')
+      .addSlider(slider => slider
+        .setLimits(0.02, 0.30, 0.01)
+        .setValue(t.minDeltaE)
+        .setDynamicTooltip()
+        .onChange(async value => {
+          t.minDeltaE = value;
+          await this.plugin.saveSettings();
+          this.display();
+        }));
+
+    new Setting(section)
+      .setName('Minimum contrast ratio')
+      .setDesc('WCAG contrast ratio the link must meet against both backgrounds (4.5 = AA normal text)')
+      .addSlider(slider => slider
+        .setLimits(3.0, 7.0, 0.1)
+        .setValue(t.minContrast)
+        .setDynamicTooltip()
+        .onChange(async value => {
+          t.minContrast = value;
+          await this.plugin.saveSettings();
+          this.display();
+        }));
+  }
+
+  private createThemeLinkColorSetting(
+    containerEl: HTMLElement,
+    name: string,
+    desc: string,
+    mapping: PropertyColorMapping,
+    themeType: 'Light' | 'Dark',
+    compact = false
+  ) {
+    const isLight = themeType === 'Light';
+
+    const getIsAuto = () => isLight ? mapping.isAutoLinkLight : mapping.isAutoLinkDark;
+    const getColor = () => isLight ? mapping.linkColorLight : mapping.linkColorDark;
+    const setIsAuto = (value: boolean) => {
+      if (isLight) mapping.isAutoLinkLight = value;
+      else mapping.isAutoLinkDark = value;
+    };
+    const setColor = (value: string) => {
+      if (isLight) mapping.linkColorLight = value;
+      else mapping.linkColorDark = value;
+    };
+
+    // Compute the auto link color using the color-optimizer engine.
+    // We treat the rule's *background* color (auto or manual) as the base
+    // accent the engine should derive a link hue from. For "other rules'
+    // already-assigned link colors" (multi-rule collision avoidance), we
+    // pass every other rule's stored link color for this theme.
+    const computeAutoLinkHex = (): string => {
+      const baseColor = isLight
+        ? (mapping.isAutoLight ? DEFAULT_LIGHT_AUTO_COLOR : mapping.colorLight)
+        : (mapping.isAutoDark ? DEFAULT_DARK_AUTO_COLOR : mapping.colorDark);
+      const baseHex = this.resolveColorForOptimizer(baseColor);
+      if (!baseHex) return '#808080';
+
+      // Read theme variables for THIS theme (not the currently active one),
+      // so the dark preview swatch and dark link math always use the dark
+      // theme's defaults even when the user is currently in light mode.
+      const themeName: 'Light' | 'Dark' = isLight ? 'Light' : 'Dark';
+      const bo_l = this.resolveColorForOptimizerForTheme('var(--background-primary)', 'Light');
+      const bo_d = this.resolveColorForOptimizerForTheme('var(--background-primary)', 'Dark');
+      const to_l = this.resolveColorForOptimizerForTheme('var(--text-normal)', 'Light');
+      const to_d = this.resolveColorForOptimizerForTheme('var(--text-normal)', 'Dark');
+      const lo_l = this.resolveColorForOptimizerForTheme('var(--link-color)', 'Light');
+      const lo_d = this.resolveColorForOptimizerForTheme('var(--link-color)', 'Dark');
+      if (!bo_l || !bo_d || !to_l || !to_d || !lo_l || !lo_d) return '#808080';
+
+      const tuning = this.plugin.settings.experimentalLinkTuning ?? { ...DEFAULT_LINK_TUNING };
+
+      // Gather other rules' link hexes for the same theme, so this one
+      // doesn't collide visually with them.
+      const otherLight = this.plugin.settings.colorMappings
+        .filter(m => m !== mapping)
+        .map(m => this.resolveColorForOptimizerForTheme(
+          m.isAutoLinkLight ? this.computeAutoLinkHexFor(m, 'Light') : m.linkColorLight,
+          'Light'
+        ))
+        .filter((h): h is string => !!h);
+      const otherDark = this.plugin.settings.colorMappings
+        .filter(m => m !== mapping)
+        .map(m => this.resolveColorForOptimizerForTheme(
+          m.isAutoLinkDark ? this.computeAutoLinkHexFor(m, 'Dark') : m.linkColorDark,
+          'Dark'
+        ))
+        .filter((h): h is string => !!h);
+
+      const result = ColorOptimizer.optimize(
+        {
+          base: baseHex,
+          bo_l,
+          bo_d,
+          to_l,
+          to_d,
+          lo_l,
+          lo_d
+        },
+        { light: otherLight, dark: otherDark },
+        tuning
+      );
+
+      return isLight ? result.lc_l : result.lc_d;
+    };
+
+    const settingContainer = containerEl.createDiv('page-color-prop-color-setting-container page-color-prop-link-setting');
+    const settingEl = new Setting(settingContainer);
+    if (!compact) {
+      settingEl.setName(name);
+      settingEl.setDesc(desc);
+    }
+
+    let colorPickerInput: HTMLInputElement | null = null;
+    settingEl.addColorPicker(colorPicker => {
+      const initial = this.resolveColorForPicker(getColor() || computeAutoLinkHex());
+      colorPicker.setValue(initial).onChange(value => {
+        setIsAuto(false);
+        setColor(value);
+        updatePreview();
+        this.plugin.applyColorsToAllLeaves();
+        this.queueSave();
+      });
+      const inputs = settingContainer.querySelectorAll('input[type="color"]');
+      colorPickerInput = inputs[inputs.length - 1] as HTMLInputElement | null;
+      colorPickerInput?.addClass('page-color-prop-hidden-color-picker');
+    });
+
+    const openColorPicker = () => {
+      if (!colorPickerInput) return;
+      if ('showPicker' in colorPickerInput) {
+        (colorPickerInput as any).showPicker();
+      } else {
+        (colorPickerInput as any).click();
+      }
+    };
+
+    // Icon-toggle button: shows the ACTION available (per spec section 1).
+    //   currently Auto  -> pipette icon (click to switch to manual)
+    //   currently Manual -> sparkles icon (click to switch to auto)
+    let toggleBtnComponent: any = null;
+    settingEl.addButton(button => {
+      toggleBtnComponent = button;
+      button.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
+      button.setTooltip(getIsAuto() ? 'Switch to manual color' : 'Switch to auto color');
+      button.onClick(async () => {
+        const nowAuto = !getIsAuto();
+        setIsAuto(nowAuto);
+        if (nowAuto) {
+          setColor(computeAutoLinkHex());
+        } else if (colorPickerInput) {
+          setColor(colorPickerInput.value);
+        }
+        await this.plugin.saveSettings();
+        updatePreview();
+        button.setIcon(nowAuto ? 'pipette' : 'sparkles');
+        button.setTooltip(nowAuto ? 'Switch to manual color' : 'Switch to auto color');
+        if (!nowAuto) openColorPicker();
+      });
+    });
+
+    const toggleBtn = toggleBtnComponent?.buttonEl as HTMLButtonElement | undefined;
+
+    // Live preview swatch — renders on THIS theme's default (untouched)
+    // page background with three stacked text samples: body text, default
+    // link, and this rule's link color. Per spec section 1. The theme is
+    // forced via a hidden element so the preview shows dark-theme defaults
+    // even while the user is currently in light mode (and vice versa).
+    const themeName: 'Light' | 'Dark' = isLight ? 'Light' : 'Dark';
+    const preview = settingEl.controlEl.createDiv('page-color-prop-link-preview');
+    const defaultBg = this.computeColorFromThemeVarsForTheme('var(--background-primary)', themeName);
+    const defaultLink = this.computeColorFromThemeVarsForTheme('var(--link-color)', themeName);
+    const defaultText = this.computeColorFromThemeVarsForTheme('var(--text-normal)', themeName);
+    preview.style.backgroundColor = defaultBg || '';
+    preview.style.color = defaultText || '';
+
+    const sampleText = preview.createDiv('page-color-prop-link-preview-sample');
+    sampleText.setText('Sample text');
+    const defaultLinkEl = preview.createDiv('page-color-prop-link-preview-sample');
+    defaultLinkEl.setText('Default link');
+    defaultLinkEl.style.color = defaultLink || '';
+    const ruleLinkEl = preview.createDiv('page-color-prop-link-preview-sample page-color-prop-link-preview-rule');
+    ruleLinkEl.setText('Rule link');
+
+    const updatePreview = () => {
+      const mode = getIsAuto() ? 'Auto (computed from background hue)' : 'Manual';
+      const displayed = getIsAuto() ? computeAutoLinkHex() : (getColor() || computeAutoLinkHex());
+      ruleLinkEl.style.color = displayed;
+      preview.title = `${mode}: ${displayed}`;
+      preview.ariaLabel = `${mode} link color: ${displayed}`;
+    };
+    updatePreview();
+
+    // Clicking the preview also opens the picker (matches the background
+    // swatch's affordance for symmetry).
+    preview.onClickEvent(() => {
+      if (getIsAuto()) {
+        setIsAuto(false);
+        if (colorPickerInput) setColor(colorPickerInput.value);
+        if (toggleBtnComponent) {
+          toggleBtnComponent.setIcon('sparkles');
+          toggleBtnComponent.setTooltip('Switch to auto color');
+        }
+      }
+      this.queueSave();
+      updatePreview();
+      openColorPicker();
+    });
+  }
+
+  /** Compute the auto link hex for an arbitrary mapping (used to gather
+   *  "other rules' link colors" without recursing through the UI). */
+  private computeAutoLinkHexFor(mapping: PropertyColorMapping, theme: 'Light' | 'Dark'): string {
+    const isLight = theme === 'Light';
+    const baseColor = isLight
+      ? (mapping.isAutoLight ? DEFAULT_LIGHT_AUTO_COLOR : mapping.colorLight)
+      : (mapping.isAutoDark ? DEFAULT_DARK_AUTO_COLOR : mapping.colorDark);
+    const baseHex = this.resolveColorForOptimizerForTheme(baseColor, theme);
+    if (!baseHex) return '';
+    const bo = this.resolveColorForOptimizerForTheme('var(--background-primary)', theme);
+    const to = this.resolveColorForOptimizerForTheme('var(--text-normal)', theme);
+    const lo = this.resolveColorForOptimizerForTheme('var(--link-color)', theme);
+    if (!bo || !to || !lo) return '';
+    const tuning = this.plugin.settings.experimentalLinkTuning ?? { ...DEFAULT_LINK_TUNING };
+    const result = ColorOptimizer.optimize(
+      { base: baseHex, bo_l: bo, bo_d: bo, to_l: to, to_d: to, lo_l: lo, lo_d: lo },
+      { light: [], dark: [] },
+      tuning
+    );
+    return isLight ? result.lc_l : result.lc_d;
+  }
+
+  /** Resolves any color string (hex, rgb, or var(--...)) to a clean
+   *  6-digit hex string, using the currently active theme. */
+  private resolveColorForOptimizer(color: string): string | null {
+    return this.resolveColorForOptimizerForTheme(color, null);
+  }
+
+  /** Resolves any color string to a 6-digit hex using a SPECIFIC theme
+   *  (so dark-theme values are correct even when the user is in light mode). */
+  private resolveColorForOptimizerForTheme(color: string, theme: 'Light' | 'Dark' | null): string | null {
+    if (!color || typeof color !== 'string') return null;
+    if (color.includes('var(--')) {
+      return this.computeColorFromThemeVarsForTheme(color, theme) || null;
+    }
+    const hexMatch = color.match(/#[0-9A-Fa-f]{6}/);
+    if (hexMatch) return hexMatch[0];
+    const rgbMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (rgbMatch) {
+      const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0');
+      const g = parseInt(rgbMatch[2]).toString(16).padStart(2, '0');
+      const b = parseInt(rgbMatch[3]).toString(16).padStart(2, '0');
+      return `#${r}${g}${b}`;
+    }
+    return null;
   }
 
   private resolveColorForPicker(color: string): string {
@@ -459,12 +813,44 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   }
 
   private computeColorFromThemeVars(colorStr: string): string {
+    return this.computeColorFromThemeVarsForTheme(colorStr, null);
+  }
+
+  /** Computes a CSS variable's value for a specific theme (light/dark),
+   *  regardless of the current theme. Pass `null` for the current theme.
+   *
+   *  Obsidian theme CSS selectors are typically `body.theme-dark { ... }`,
+   *  so adding the class to a child element does NOT activate those
+   *  variables. The only reliable approach is to temporarily swap the
+   *  class on `<body>` itself. We do this synchronously — the browser
+   *  cannot repaint between the add and remove, so the user sees no flash. */
+  private computeColorFromThemeVarsForTheme(colorStr: string, theme: 'Light' | 'Dark' | null): string {
+    const body = document.body;
+    const isCurrentlyDark = body.classList.contains('theme-dark');
+    const wantDark = theme === 'Dark';
+
+    if (theme !== null && isCurrentlyDark !== wantDark) {
+      body.classList.remove('theme-light', 'theme-dark');
+      body.classList.add(wantDark ? 'theme-dark' : 'theme-light');
+    }
+
     const temp = document.createElement('div');
+    // Must NOT be `display: none` — that has no computed styles.
+    // Use off-screen positioning so it's invisible but still laid out.
+    temp.style.position = 'absolute';
+    temp.style.left = '-9999px';
+    temp.style.top = '-9999px';
+    temp.style.visibility = 'hidden';
     temp.style.color = colorStr;
-    document.body.appendChild(temp);
+    body.appendChild(temp);
 
     const computed = window.getComputedStyle(temp).color;
-    document.body.removeChild(temp);
+    body.removeChild(temp);
+
+    if (theme !== null && isCurrentlyDark !== wantDark) {
+      body.classList.remove('theme-light', 'theme-dark');
+      body.classList.add(isCurrentlyDark ? 'theme-dark' : 'theme-light');
+    }
 
     const rgbMatch = computed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
     if (rgbMatch) {
