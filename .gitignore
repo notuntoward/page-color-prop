@@ -6,3 +6,4 @@ coverage/
 data.json
 main.js
 *.js.map
+.kilo/
