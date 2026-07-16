@@ -12,7 +12,7 @@ export default [
 		]
 	},
 	{
-		files: ['main.ts', 'settings.ts'],
+		files: ['main.ts', 'settings.ts', 'link-decorator.ts', 'link-color-service.ts', 'color-optimizer.ts', 'live-preview-links.ts'],
 		languageOptions: {
 			parser: tseslint.parser,
 			parserOptions: {

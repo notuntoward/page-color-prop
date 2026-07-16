@@ -14,6 +14,13 @@
   color: var(--page-color-prop-link-color) !important;
 }
 
+/* Tab text decoration for notes whose background is colored. The color
+   variable is set on the tab header to match the rule's resolved link color
+   (auto or manual), just like links in the file navigator. */
+.page-color-prop-tab .workspace-tab-header-inner-title {
+  color: var(--page-color-prop-tab-color) !important;
+}
+
 .page-color-prop-active.workspace-leaf-content[data-type="markdown"] .view-content,
 .page-color-prop-active.workspace-leaf-content[data-type="markdown"] .markdown-source-view,
 .page-color-prop-active.workspace-leaf-content[data-type="markdown"] .markdown-reading-view,

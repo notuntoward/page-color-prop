@@ -119,15 +119,17 @@ export function buildPageColorPropLivePreviewExtension(plugin: PageColorPropPlug
 			return builder.finish();
 		}
 		resolveColorForTargetName(name: string, sourcePath: string): { color: string; rule: number } | null {
+			const decorator = plugin.linkDecorator;
+			if (!decorator) return null;
 			// Skip names that look like URLs.
 			if (/^[a-z]+:\/\//i.test(name)) return null;
 			const target = plugin.app.metadataCache.getFirstLinkpathDest(name, sourcePath) as TFile | null;
 			if (!target) return null;
-			const mapping = plugin.linkDecorator?.getMatchingMappingForFile(target);
+			const mapping = decorator.getMatchingMappingForFile(target);
 			if (!mapping) return null;
-			const color = plugin.linkDecorator.getResolvedLinkColor(mapping);
+			const color = decorator.getResolvedLinkColor(mapping);
 			if (!color) return null;
-			return { color, rule: plugin.linkDecorator.getMappingIndex(mapping) + 1 };
+			return { color, rule: decorator.getMappingIndex(mapping) + 1 };
 		}
 	}, {
 		decorations: v => v.decorations

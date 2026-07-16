@@ -27,7 +27,7 @@ interface LegacyPropertyColorMapping extends Partial<PropertyColorMapping> {
 
 export default class PageColorPropPlugin extends Plugin {
 	settings: PageColorPropSettings;
-	private isDarkTheme: boolean = false;
+	isDarkTheme: boolean = false;
 	private themeObserver: MutationObserver | null = null;
 	private multipleMatchNoticeKeys: Set<string> = new Set();
 	private pendingRetryHandles: Set<number> = new Set();
@@ -163,6 +163,7 @@ export default class PageColorPropPlugin extends Plugin {
 			this.settings = {
 				colorMappings: loadedData.colorMappings.filter(this.isValidMapping),
 				notifyOnMultipleMatches: loadedData.notifyOnMultipleMatches ?? DEFAULT_SETTINGS.notifyOnMultipleMatches,
+				colorTabText: loadedData.colorTabText ?? DEFAULT_SETTINGS.colorTabText,
 				experimentalLinkTuning: { ...DEFAULT_LINK_TUNING, ...(loadedData.experimentalLinkTuning ?? {}) }
 			};
 		}
@@ -252,6 +253,11 @@ export default class PageColorPropPlugin extends Plugin {
 			needsSave = true;
 		}
 
+		if (this.settings.colorTabText === undefined) {
+			this.settings.colorTabText = DEFAULT_SETTINGS.colorTabText;
+			needsSave = true;
+		}
+
 		if (!this.settings.experimentalLinkTuning) {
 			this.settings.experimentalLinkTuning = { ...DEFAULT_LINK_TUNING };
 			needsSave = true;
@@ -272,8 +278,16 @@ export default class PageColorPropPlugin extends Plugin {
 		this.multipleMatchNoticeKeys.clear();
 
 		// Reapply colors when settings change
-		this.applyColorsToAllLeaves();
-		this.refreshLinkDecorations();
+		try {
+			this.applyColorsToAllLeaves();
+		} catch (e) {
+			console.error('Page Color Prop: error applying colors', e);
+		}
+		try {
+			this.refreshLinkDecorations();
+		} catch (e) {
+			console.error('Page Color Prop: error refreshing link decorations', e);
+		}
 	}
 
 	private updateThemeState() {
@@ -339,57 +353,68 @@ export default class PageColorPropPlugin extends Plugin {
 		// Elements whose color must be preserved during the stale-style sweep:
 		// either we just colored them, or their metadata isn't ready yet.
 		const protectedElements = new Set<HTMLElement>();
+		const protectedTabs = new Set<HTMLElement>();
 
 		leaves.forEach((leaf) => {
-			if (!(leaf.view instanceof MarkdownView)) return;
+			try {
+				if (!(leaf.view instanceof MarkdownView)) return;
 
-			const file = leaf.view.file;
-			if (!file) return;
+				const file = leaf.view.file;
+				if (!file) return;
 
-			const targetEl = this.getLeafTargetEl(leaf);
+				const targetEl = this.getLeafTargetEl(leaf);
+				const tabEl = this.getLeafTabEl(leaf);
 
-			const metadata = this.app.metadataCache.getFileCache(file);
-			if (!metadata) {
-				// Metadata cache not populated yet for this file. This happens when a
-				// note is opened before Obsidian finishes parsing it. Don't strip the
-				// existing color, and schedule a retry in case the metadataCache
-				// 'changed' event does not fire (e.g. the cache is reused/unchanged).
-				needsRetry = true;
-				if (targetEl) protectedElements.add(targetEl);
-				return;
-			}
-
-			// metadata exists but has no frontmatter: the file genuinely has no
-			// frontmatter, so remove any stale color.
-			if (!metadata.frontmatter) {
-				this.removeBackgroundColorFromLeaf(leaf);
-				return;
-			}
-
-			const matchResult = this.findMatchingColorMappings(metadata.frontmatter);
-			const colorMapping = matchResult.selected?.mapping;
-
-			if (colorMapping) {
-				this.notifyIfMultipleMappingsMatch(file, matchResult.matches);
-
-				const color = this.getMappingColor(colorMapping);
-				if (color && this.isValidColor(color)) {
-					this.applyBackgroundColorToLeaf(leaf, color);
+				const metadata = this.app.metadataCache.getFileCache(file);
+				if (!metadata) {
+					// Metadata cache not populated yet for this file. This happens when a
+					// note is opened before Obsidian finishes parsing it. Don't strip the
+					// existing color, and schedule a retry in case the metadataCache
+					// 'changed' event does not fire (e.g. the cache is reused/unchanged).
+					needsRetry = true;
 					if (targetEl) protectedElements.add(targetEl);
-				} else {
-					// Invalid color - remove any existing color
-					this.removeBackgroundColorFromLeaf(leaf);
+					if (tabEl) protectedTabs.add(tabEl);
+					return;
 				}
-			} else {
-				// No mapping matches - remove color from this leaf
-				this.removeBackgroundColorFromLeaf(leaf);
+
+				// metadata exists but has no frontmatter: the file genuinely has no
+				// frontmatter, so remove any stale color.
+				if (!metadata.frontmatter) {
+					this.removeColorsFromLeaf(leaf);
+					return;
+				}
+
+				const matchResult = this.findMatchingColorMappings(metadata.frontmatter);
+				const colorMapping = matchResult.selected?.mapping;
+
+				if (colorMapping) {
+					this.notifyIfMultipleMappingsMatch(file, matchResult.matches);
+
+					const color = this.getMappingColor(colorMapping);
+					if (color && this.isValidColor(color)) {
+						this.applyBackgroundColorToLeaf(leaf, color);
+						if (targetEl) protectedElements.add(targetEl);
+						if (tabEl) {
+							this.applyTabColorToLeaf(leaf, colorMapping);
+							protectedTabs.add(tabEl);
+						}
+					} else {
+						// Invalid color - remove any existing color
+						this.removeColorsFromLeaf(leaf);
+					}
+				} else {
+					// No mapping matches - remove color from this leaf
+					this.removeColorsFromLeaf(leaf);
+				}
+			} catch (e) {
+				console.error('Page Color Prop: error coloring leaf', e);
 			}
 		});
 
 		// Sweep away stale styles left on elements that are no longer active
 		// markdown leaves (e.g. closed panes, views switched to non-markdown),
 		// without touching elements we are intentionally keeping colored.
-		this.removeStaleStyles(protectedElements);
+		this.removeStaleStyles(protectedElements, protectedTabs);
 
 		// Only schedule a retry if one isn't already in flight. Multiple workspace
 		// events can fire in quick succession while a note's metadata is still
@@ -407,6 +432,16 @@ export default class PageColorPropPlugin extends Plugin {
 	private getLeafTargetEl(leaf: WorkspaceLeaf): HTMLElement | null {
 		const targetEl = leaf.view.containerEl.querySelector('.workspace-leaf-content[data-type="markdown"]') ?? leaf.view.containerEl;
 		return targetEl.instanceOf(HTMLElement) ? targetEl : null;
+	}
+
+	private getLeafTabEl(leaf: WorkspaceLeaf): HTMLElement | null {
+		try {
+			const tabEl = (leaf as any).tabHeaderEl;
+			if (!tabEl) return null;
+			return tabEl.instanceOf(HTMLElement) ? tabEl : null;
+		} catch {
+			return null;
+		}
 	}
 
 	private getMappingColor(mapping: PropertyColorMapping): string {
@@ -463,17 +498,59 @@ export default class PageColorPropPlugin extends Plugin {
 		targetEl.style.removeProperty('--page-color-prop-background');
 	}
 
-	private removeStaleStyles(protectedElements: Set<HTMLElement>) {
+	private applyTabColorToLeaf(leaf: WorkspaceLeaf, mapping: PropertyColorMapping) {
+		if (!this.settings.colorTabText || !this.linkDecorator) {
+			return;
+		}
+
+		try {
+			const tabEl = this.getLeafTabEl(leaf);
+			if (!tabEl) return;
+
+			const color = this.linkDecorator.getResolvedLinkColor(mapping);
+			if (!color) {
+				this.removeTabColorFromLeaf(leaf);
+				return;
+			}
+
+			tabEl.addClass('page-color-prop-tab');
+			tabEl.style.setProperty('--page-color-prop-tab-color', color);
+		} catch (e) {
+			console.error('Page Color Prop: error applying tab color', e);
+		}
+	}
+
+	private removeTabColorFromLeaf(leaf: WorkspaceLeaf) {
+		const tabEl = this.getLeafTabEl(leaf);
+		if (!tabEl) return;
+
+		tabEl.removeClass('page-color-prop-tab');
+		tabEl.style.removeProperty('--page-color-prop-tab-color');
+	}
+
+	private removeColorsFromLeaf(leaf: WorkspaceLeaf) {
+		this.removeBackgroundColorFromLeaf(leaf);
+		this.removeTabColorFromLeaf(leaf);
+	}
+
+	private removeStaleStyles(protectedElements: Set<HTMLElement>, protectedTabs: Set<HTMLElement> = new Set()) {
 		document.querySelectorAll('.page-color-prop-active').forEach(el => {
 			if (el.instanceOf(HTMLElement) && !protectedElements.has(el)) {
 				el.removeClass('page-color-prop-active');
 				el.style.removeProperty('--page-color-prop-background');
 			}
 		});
+
+		document.querySelectorAll('.page-color-prop-tab').forEach(el => {
+			if (el.instanceOf(HTMLElement) && !protectedTabs.has(el)) {
+				el.removeClass('page-color-prop-tab');
+				el.style.removeProperty('--page-color-prop-tab-color');
+			}
+		});
 	}
 
 	private removeAllStyles() {
-		this.removeStaleStyles(new Set());
+		this.removeStaleStyles(new Set(), new Set());
 	}
 
 	isValidColor(color: string): boolean {

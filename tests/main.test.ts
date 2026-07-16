@@ -25,7 +25,8 @@ function createPlugin(overrides: Partial<PageColorPropSettings> = {}) {
   const plugin = Object.create(PageColorPropPlugin.prototype) as any;
   plugin.settings = {
     colorMappings: overrides.colorMappings ?? [mapping()],
-    notifyOnMultipleMatches: overrides.notifyOnMultipleMatches ?? true
+    notifyOnMultipleMatches: overrides.notifyOnMultipleMatches ?? true,
+    colorTabText: true
   };
   plugin.isDarkTheme = false;
   plugin.multipleMatchNoticeKeys = new Set<string>();
@@ -50,6 +51,7 @@ interface TestMarkdownView extends MarkdownView {
 
 interface TestLeaf {
   view: TestMarkdownView;
+  tabHeaderEl: HTMLElement;
 }
 
 function createLeaf(file?: any): TestLeaf {
@@ -58,7 +60,10 @@ function createLeaf(file?: any): TestLeaf {
   view.containerEl = document.createElement('div');
   view.containerEl.setAttribute('data-type', 'markdown');
 
-  return { view };
+  return {
+    view,
+    tabHeaderEl: document.createElement('div')
+  };
 }
 
 beforeEach(() => {
@@ -84,6 +89,7 @@ describe('PageColorPropPlugin', () => {
     expect(plugin.settings).toEqual({
       colorMappings: [],
       notifyOnMultipleMatches: true,
+      colorTabText: true,
       experimentalLinkTuning: {
         hueStepDegrees: 15,
         minDeltaE: 0.12,
@@ -315,6 +321,150 @@ describe('PageColorPropPlugin', () => {
     expect(leaf.view.containerEl.classList.contains('page-color-prop-active')).toBe(true);
     expect(leaf.view.containerEl.style.getPropertyValue('--page-color-prop-background')).toBe('#4e66d0');
     expect(staleElement.classList.contains('page-color-prop-active')).toBe(false);
+  });
+
+  it('applies the matching link color to a note tab when tab coloring is enabled', () => {
+    const file = {
+      path: 'Politics/Seattle/ai-searches/note.md',
+      basename: 'note'
+    };
+    const leaf = createLeaf(file);
+    const plugin = createPlugin({
+      colorMappings: [
+        mapping({ colorLight: '#4e66d0', isAutoLight: false })
+      ]
+    });
+    plugin.linkDecorator = {
+      getResolvedLinkColor: vi.fn(() => '#1a5fb4')
+    } as any;
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+    plugin.app.metadataCache.getFileCache.mockReturnValue({
+      frontmatter: { tags: ['ai-generated'] }
+    });
+
+    plugin.applyColorsToAllLeaves();
+
+    expect(leaf.tabHeaderEl.classList.contains('page-color-prop-tab')).toBe(true);
+    expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color-prop-tab-color')).toBe('#1a5fb4');
+  });
+
+  it('does not color tabs when tab coloring is disabled', () => {
+    const file = {
+      path: 'Politics/Seattle/ai-searches/note.md',
+      basename: 'note'
+    };
+    const leaf = createLeaf(file);
+    const plugin = createPlugin({
+      colorMappings: [
+        mapping({ colorLight: '#4e66d0', isAutoLight: false })
+      ]
+    });
+    plugin.settings.colorTabText = false;
+    plugin.linkDecorator = {
+      getResolvedLinkColor: vi.fn(() => '#1a5fb4')
+    } as any;
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+    plugin.app.metadataCache.getFileCache.mockReturnValue({
+      frontmatter: { tags: ['ai-generated'] }
+    });
+
+    plugin.applyColorsToAllLeaves();
+
+    expect(leaf.tabHeaderEl.classList.contains('page-color-prop-tab')).toBe(false);
+  });
+
+  it('removes stale tab styles while preserving active ones', () => {
+    const file = {
+      path: 'Politics/Seattle/ai-searches/note.md',
+      basename: 'note'
+    };
+    const leaf = createLeaf(file);
+    const staleTab = document.createElement('div');
+    staleTab.classList.add('page-color-prop-tab');
+    staleTab.style.setProperty('--page-color-prop-tab-color', '#1a5fb4');
+    document.body.appendChild(staleTab);
+    const plugin = createPlugin({
+      colorMappings: [
+        mapping({ colorLight: '#4e66d0', isAutoLight: false })
+      ]
+    });
+    plugin.linkDecorator = {
+      getResolvedLinkColor: vi.fn(() => '#1a5fb4')
+    } as any;
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+    plugin.app.metadataCache.getFileCache.mockReturnValue({
+      frontmatter: { tags: ['ai-generated'] }
+    });
+
+    plugin.applyColorsToAllLeaves();
+
+    expect(leaf.tabHeaderEl.classList.contains('page-color-prop-tab')).toBe(true);
+    expect(staleTab.classList.contains('page-color-prop-tab')).toBe(false);
+  });
+
+  it('removes tab color when a rule no longer matches', () => {
+    const file = {
+      path: 'Politics/Seattle/ai-searches/note.md',
+      basename: 'note'
+    };
+    const leaf = createLeaf(file);
+    leaf.tabHeaderEl.classList.add('page-color-prop-tab');
+    leaf.tabHeaderEl.style.setProperty('--page-color-prop-tab-color', '#1a5fb4');
+    const plugin = createPlugin();
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+    plugin.app.metadataCache.getFileCache.mockReturnValue({
+      frontmatter: { tags: ['research'] }
+    });
+
+    plugin.applyColorsToAllLeaves();
+
+    expect(leaf.tabHeaderEl.classList.contains('page-color-prop-tab')).toBe(false);
+    expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color-prop-tab-color')).toBe('');
+  });
+
+  it('removes tab color when the resolved link color is empty', () => {
+    const file = {
+      path: 'Politics/Seattle/ai-searches/note.md',
+      basename: 'note'
+    };
+    const leaf = createLeaf(file);
+    leaf.tabHeaderEl.classList.add('page-color-prop-tab');
+    leaf.tabHeaderEl.style.setProperty('--page-color-prop-tab-color', '#1a5fb4');
+    const plugin = createPlugin({
+      colorMappings: [
+        mapping({ colorLight: '#4e66d0', isAutoLight: false })
+      ]
+    });
+    plugin.linkDecorator = {
+      getResolvedLinkColor: vi.fn(() => '')
+    } as any;
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+    plugin.app.metadataCache.getFileCache.mockReturnValue({
+      frontmatter: { tags: ['ai-generated'] }
+    });
+
+    plugin.applyColorsToAllLeaves();
+
+    expect(leaf.tabHeaderEl.classList.contains('page-color-prop-tab')).toBe(false);
+    expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color-prop-tab-color')).toBe('');
+  });
+
+  it('removes all background and tab styles on unload', () => {
+    const leaf = createLeaf({ path: 'note.md', basename: 'note' });
+    leaf.view.containerEl.classList.add('page-color-prop-active');
+    leaf.view.containerEl.style.setProperty('--page-color-prop-background', '#4e66d0');
+    leaf.tabHeaderEl.classList.add('page-color-prop-tab');
+    leaf.tabHeaderEl.style.setProperty('--page-color-prop-tab-color', '#1a5fb4');
+    document.body.appendChild(leaf.view.containerEl);
+    document.body.appendChild(leaf.tabHeaderEl);
+    const plugin = createPlugin();
+
+    (plugin as any).removeAllStyles();
+
+    expect(leaf.view.containerEl.classList.contains('page-color-prop-active')).toBe(false);
+    expect(leaf.view.containerEl.style.getPropertyValue('--page-color-prop-background')).toBe('');
+    expect(leaf.tabHeaderEl.classList.contains('page-color-prop-tab')).toBe(false);
+    expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color-prop-tab-color')).toBe('');
   });
 
   it('skips leaves that cannot be colored', () => {

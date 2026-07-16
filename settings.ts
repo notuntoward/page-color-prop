@@ -19,6 +19,7 @@ export interface PropertyColorMapping {
 export interface PageColorPropSettings {
   colorMappings: PropertyColorMapping[];
   notifyOnMultipleMatches: boolean;
+  colorTabText: boolean;
   experimentalLinkTuning: LinkColorTuning;
 }
 
@@ -29,6 +30,7 @@ export const DEFAULT_DARK_AUTO_COLOR = 'hsla(var(--accent-h), var(--accent-s), 2
 export const DEFAULT_SETTINGS: PageColorPropSettings = {
   colorMappings: [],
   notifyOnMultipleMatches: true,
+  colorTabText: true,
   experimentalLinkTuning: { ...DEFAULT_LINK_TUNING }
 };
 
@@ -86,6 +88,18 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.notifyOnMultipleMatches)
           .onChange(async value => {
             this.plugin.settings.notifyOnMultipleMatches = value;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName('Color tab text')
+      .setDesc('Tint the text of a note’s tab to match its rule’s link color. Toggle off to keep tabs using the default theme text color.')
+      .addToggle(toggle => {
+        toggle
+          .setValue(this.plugin.settings.colorTabText)
+          .onChange(async value => {
+            this.plugin.settings.colorTabText = value;
             await this.plugin.saveSettings();
           });
       });
@@ -175,11 +189,11 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     });
   }
 
-  private saveTimeout: number | null = null;
+  private saveTimeout: number | undefined = undefined;
   private pendingSave = false;
 
   private queueSave() {
-    if (this.saveTimeout === null) {
+    if (this.saveTimeout === undefined) {
       // First change in a sequence: save immediately so the UI refreshes
       // right away (e.g., when dragging a color picker).
       this.pendingSave = false;
@@ -190,18 +204,18 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     }
 
     window.clearTimeout(this.saveTimeout);
-    this.saveTimeout = window.setTimeout(() => {
+      this.saveTimeout = window.setTimeout(() => {
       if (this.pendingSave) {
         this.plugin.saveSettings();
       }
-      this.saveTimeout = null;
+      this.saveTimeout = undefined;
       this.pendingSave = false;
     }, 500);
   }
 
   private flushSave() {
     window.clearTimeout(this.saveTimeout);
-    this.saveTimeout = null;
+    this.saveTimeout = undefined;
     if (this.pendingSave) {
       this.pendingSave = false;
       this.plugin.saveSettings();
