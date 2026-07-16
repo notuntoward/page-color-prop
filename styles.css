@@ -5,6 +5,15 @@
   background-color: var(--page-color-prop-background) !important;
 }
 
+/* Link decoration: every link whose destination note matches a Page
+   Color Prop rule is given this class plus an inline --page-color-prop-
+   link-color and a data-page-color-prop-link-rule attribute by the
+   link-decorator service at runtime. We only set color here, not font
+   weight, underline, family, or background. */
+.page-color-prop-link {
+  color: var(--page-color-prop-link-color) !important;
+}
+
 .page-color-prop-active.workspace-leaf-content[data-type="markdown"] .view-content,
 .page-color-prop-active.workspace-leaf-content[data-type="markdown"] .markdown-source-view,
 .page-color-prop-active.workspace-leaf-content[data-type="markdown"] .markdown-reading-view,

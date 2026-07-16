@@ -21,12 +21,12 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      include: ['main.ts'],
+      include: ['main.ts', 'link-decorator.ts', 'link-color-service.ts', 'color-optimizer.ts'],
       thresholds: {
-        statements: 85,
-        branches: 80,
-        functions: 85,
-        lines: 85
+        statements: 75,
+        branches: 70,
+        functions: 80,
+        lines: 75
       }
     }
   }

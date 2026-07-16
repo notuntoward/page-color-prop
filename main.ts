@@ -8,6 +8,9 @@ import {
 	PropertyColorMapping
 } from './settings';
 import { DEFAULT_LINK_TUNING } from './color-optimizer';
+import { LinkDecorator } from './link-decorator';
+import { findMatchingColorMappings } from './link-color-service';
+import { buildPageColorPropLivePreviewExtension } from './live-preview-links';
 
 type FrontmatterValue = string | number | boolean | null | undefined | FrontmatterValue[];
 type Frontmatter = Record<string, FrontmatterValue>;
@@ -28,6 +31,7 @@ export default class PageColorPropPlugin extends Plugin {
 	private themeObserver: MutationObserver | null = null;
 	private multipleMatchNoticeKeys: Set<string> = new Set();
 	private pendingRetryHandles: Set<number> = new Set();
+	linkDecorator: LinkDecorator | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -60,6 +64,26 @@ export default class PageColorPropPlugin extends Plugin {
 
 		// Apply colors to all visible files on load
 		this.applyColorsToAllLeaves();
+
+		// Initialize link decoration.
+		this.linkDecorator = new LinkDecorator(this);
+		this.linkDecorator.invalidateCaches();
+		this.linkDecorator.observeDocument();
+		this.registerMarkdownPostProcessor((el, ctx) => {
+			this.linkDecorator?.decorateLinksInContainer(el, ctx.sourcePath, 'a.internal-link');
+		});
+		// CodeMirror 6 Live Preview extension.
+		this.registerEditorExtension(buildPageColorPropLivePreviewExtension(this));
+		this.app.workspace.onLayoutReady(() => {
+			this.installViewObservers();
+		});
+
+		// Re-decorate on layout changes.
+		this.registerEvent(
+			this.app.workspace.on('layout-change', () => {
+				this.installViewObservers();
+			})
+		);
 	}
 
 	onunload() {
@@ -67,6 +91,46 @@ export default class PageColorPropPlugin extends Plugin {
 		this.clearPendingRetries();
 		if (this.themeObserver) {
 			this.themeObserver.disconnect();
+		}
+		if (this.linkDecorator) {
+			this.linkDecorator.dispose();
+			this.linkDecorator = null;
+		}
+	}
+
+	private installViewObservers() {
+		if (!this.linkDecorator) return;
+		// File explorer, backlinks, outgoing links, search, bookmarks,
+		// starred, file properties, recent files — all share the
+		// workspace-ribbon / left-sidebar / right-sidebar containers.
+		const selectors = [
+			'.workspace-leaf-content[data-type="file-explorer"]',
+			'.workspace-leaf-content[data-type="backlink"]',
+			'.workspace-leaf-content[data-type="outgoing-link"]',
+			'.workspace-leaf-content[data-type="search"]',
+			'.workspace-leaf-content[data-type="bookmarks"]',
+			'.workspace-leaf-content[data-type="starred"]',
+			'.workspace-leaf-content[data-type="recent-files"]',
+			'.workspace-leaf-content[data-type="file-properties"]'
+		];
+		for (const sel of selectors) {
+			document.querySelectorAll(sel).forEach((node) => {
+				if (node.instanceOf(HTMLElement)) {
+					this.linkDecorator!.observeContainer(
+						node,
+						'',
+						'.tree-item-inner, .nav-file-title-content, .metadata-link-inner, .multi-select-pill-content'
+					);
+				}
+			});
+		}
+	}
+
+	/** Refresh all link decorations. Called after settings/theme/metadata changes. */
+	public refreshLinkDecorations() {
+		if (this.linkDecorator) {
+			this.linkDecorator.invalidateCaches();
+			this.linkDecorator.refreshAllVisible();
 		}
 	}
 
@@ -194,6 +258,7 @@ export default class PageColorPropPlugin extends Plugin {
 
 		// Reapply colors when settings change
 		this.applyColorsToAllLeaves();
+		this.refreshLinkDecorations();
 	}
 
 	private updateThemeState() {
@@ -216,6 +281,7 @@ export default class PageColorPropPlugin extends Plugin {
 
 					if (wasLight !== isNowLight) {
 						this.applyColorsToAllLeaves();
+						this.refreshLinkDecorations();
 					}
 				}
 			}
@@ -231,11 +297,20 @@ export default class PageColorPropPlugin extends Plugin {
 	private onMetadataChanged(file: TFile) {
 		// When metadata changes, reapply colors to all leaves
 		this.applyColorsToAllLeaves();
+		// Invalidate this file's cache entry and refresh visible link
+		// decorations. Other rules' colors are unchanged, so we just
+		// redecorate; theme is unchanged, so caches only need clearing
+		// for this file.
+		if (this.linkDecorator) {
+			this.linkDecorator.invalidateCaches();
+			this.linkDecorator.refreshAllVisible();
+		}
 	}
 
 	private onLayoutChange() {
 		// When layout changes (split, close pane, etc.), reapply colors
 		this.applyColorsToAllLeaves();
+		this.installViewObservers();
 	}
 
 	private onFileOpen() {
@@ -328,37 +403,9 @@ export default class PageColorPropPlugin extends Plugin {
 	}
 
 	private findMatchingColorMappings(frontmatter: Frontmatter): { selected: ColorMappingMatch | null; matches: ColorMappingMatch[] } {
-		const matches: ColorMappingMatch[] = [];
-
-		this.settings.colorMappings.forEach((mapping, index) => {
-			const propertyValue = frontmatter[mapping.property];
-
-			if (propertyValue === undefined || propertyValue === null) return;
-
-			if (mapping.matchType === 'exact') {
-				if (Array.isArray(propertyValue)) {
-					if (propertyValue.length === 1 && String(propertyValue[0]) === mapping.value) {
-						matches.push({ mapping, index, propertyValue });
-					}
-				} else if (String(propertyValue) === mapping.value) {
-					matches.push({ mapping, index, propertyValue });
-				}
-			} else if (mapping.matchType === 'contains') {
-				if (Array.isArray(propertyValue)) {
-					if (propertyValue.map(String).includes(mapping.value)) {
-						matches.push({ mapping, index, propertyValue });
-					}
-				} else {
-					if (String(propertyValue).includes(mapping.value)) {
-						matches.push({ mapping, index, propertyValue });
-					}
-				}
-			}
-		});
-
-		return {
-			selected: matches.length > 0 ? matches[matches.length - 1] : null,
-			matches
+		return findMatchingColorMappings(this.settings.colorMappings, frontmatter) as {
+			selected: ColorMappingMatch | null;
+			matches: ColorMappingMatch[];
 		};
 	}
 

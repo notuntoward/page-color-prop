@@ -13,7 +13,16 @@ const context = await esbuild.context({
   banner: { js: banner },
   entryPoints: ["main.ts"],
   bundle: true,
-  external: ["obsidian", "electron", ...builtins],
+  external: [
+    "obsidian",
+    "electron",
+    ...builtins,
+    // Let Obsidian provide its own CodeMirror 6 packages so the live-preview
+    // extension uses the same ViewPlugin/Decoration/RangeSetBuilder instances.
+    "@codemirror/view",
+    "@codemirror/state",
+    "@codemirror/language"
+  ],
   format: "cjs",
   target: "es2018",
   logLevel: "info",
