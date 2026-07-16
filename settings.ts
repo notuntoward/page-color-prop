@@ -1,7 +1,7 @@
 import { App, Modal, PluginSettingTab, setIcon, Setting } from 'obsidian';
 import type PageColorPropPlugin from './main';
 import { DEFAULT_LINK_TUNING, type LinkColorTuning } from './color-optimizer';
-import { computeAutoLinkHex as resolveAutoLinkHex, readBothThemeVars } from './link-color-service';
+import { computeAutoLinkHex as resolveAutoLinkHex, readBothThemeVars, readThemeCssVar } from './link-color-service';
 
 export interface PropertyColorMapping {
   property: string;
@@ -738,27 +738,12 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     });
   }
 
+  /** Resolves any color string (hex, rgb, or var(--...)) to a 6-digit hex
+   *  suitable for the native <input type="color"> element, which requires
+   *  a strict hex value. Delegates entirely to readThemeCssVar so this
+   *  logic has exactly one implementation. */
   private resolveColorForPicker(color: string): string {
-    if (!color || typeof color !== 'string') {
-      return '#808080';
-    }
-
-    const hexMatch = color.match(/#[0-9A-Fa-f]{6}/);
-    if (hexMatch) return hexMatch[0];
-
-    if (color.includes('var(--')) {
-      return this.computeColorFromThemeVars(color);
-    }
-
-    const rgbMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-    if (rgbMatch) {
-      const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0');
-      const g = parseInt(rgbMatch[2]).toString(16).padStart(2, '0');
-      const b = parseInt(rgbMatch[3]).toString(16).padStart(2, '0');
-      return `#${r}${g}${b}`;
-    }
-
-    return '#808080';
+    return readThemeCssVar(color) ?? '#808080';
   }
 
   private resolveColorForDisplay(color: string): string {
@@ -784,44 +769,33 @@ export class PageColorPropSettingTab extends PluginSettingTab {
    *  so adding the class to a child element does NOT activate those
    *  variables. The only reliable approach is to temporarily swap the
    *  class on `<body>` itself. We do this synchronously — the browser
-   *  cannot repaint between the add and remove, so the user sees no flash. */
+   *  cannot repaint between the add and remove, so the user sees no flash.
+   *
+   *  The actual CSS-variable-to-hex resolution is delegated to the shared
+   *  readThemeCssVar (link-color-service.ts) so this file never carries its
+   *  own copy of that DOM-measurement logic. Two copies of "read a CSS
+   *  color expression and convert it to hex" is exactly how the auto
+   *  link-color preview bug happened elsewhere in this file — one copy
+   *  quietly drifted from the other. */
   private computeColorFromThemeVarsForTheme(colorStr: string, theme: 'Light' | 'Dark' | null): string {
     const body = document.body;
     const isCurrentlyDark = body.classList.contains('theme-dark');
     const wantDark = theme === 'Dark';
+    const needsSwitch = theme !== null && isCurrentlyDark !== wantDark;
 
-    if (theme !== null && isCurrentlyDark !== wantDark) {
+    if (needsSwitch) {
       body.classList.remove('theme-light', 'theme-dark');
       body.classList.add(wantDark ? 'theme-dark' : 'theme-light');
     }
 
-    const temp = document.createElement('div');
-    // Must NOT be `display: none` — that has no computed styles.
-    // Use off-screen positioning so it's invisible but still laid out.
-    temp.style.position = 'absolute';
-    temp.style.left = '-9999px';
-    temp.style.top = '-9999px';
-    temp.style.visibility = 'hidden';
-    temp.style.color = colorStr;
-    body.appendChild(temp);
+    const hex = readThemeCssVar(colorStr);
 
-    const computed = window.getComputedStyle(temp).color;
-    body.removeChild(temp);
-
-    if (theme !== null && isCurrentlyDark !== wantDark) {
+    if (needsSwitch) {
       body.classList.remove('theme-light', 'theme-dark');
       body.classList.add(isCurrentlyDark ? 'theme-dark' : 'theme-light');
     }
 
-    const rgbMatch = computed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-    if (rgbMatch) {
-      const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0');
-      const g = parseInt(rgbMatch[2]).toString(16).padStart(2, '0');
-      const b = parseInt(rgbMatch[3]).toString(16).padStart(2, '0');
-      return `#${r}${g}${b}`;
-    }
-
-    return '#808080';
+    return hex ?? '#808080';
   }
 
   /** Open a hidden color-picker input anchored to a visible element so the
