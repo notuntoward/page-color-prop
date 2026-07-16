@@ -1,9 +1,10 @@
 import { App, Modal, PluginSettingTab, setIcon, Setting } from 'obsidian';
 import type PageColorPropPlugin from './main';
 import { DEFAULT_LINK_TUNING, type LinkColorTuning } from './color-optimizer';
-import { computeAutoLinkHex as resolveAutoLinkHex, readBothThemeVars, readThemeCssVar } from './link-color-service';
+import { computeAutoRuleColors, readBothThemeVars, readThemeCssVar } from './link-color-service';
 
 export interface PropertyColorMapping {
+  id: string;
   property: string;
   value: string;
   colorLight: string;
@@ -15,6 +16,10 @@ export interface PropertyColorMapping {
   linkColorDark: string;
   isAutoLinkLight: boolean;
   isAutoLinkDark: boolean;
+}
+
+export function newRuleId(): string {
+  return crypto.randomUUID();
 }
 
 export interface PageColorPropSettings {
@@ -61,6 +66,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           .setCta()
           .onClick(async () => {
             this.plugin.settings.colorMappings.push({
+              id: newRuleId(),
               property: '',
               value: '',
               colorLight: DEFAULT_LIGHT_AUTO_COLOR,
@@ -291,9 +297,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     this.createFooterButton(footer, 'copy', 'Duplicate', async () => {
       const duplicateIndex = index + 1;
-      this.plugin.settings.colorMappings.splice(duplicateIndex, 0, {
-        ...JSON.parse(JSON.stringify(mapping))
-      });
+      const duplicate = JSON.parse(JSON.stringify(mapping)) as PropertyColorMapping;
+      duplicate.id = newRuleId();
+      this.plugin.settings.colorMappings.splice(duplicateIndex, 0, duplicate);
       await this.plugin.saveSettings();
       this.display();
       this.scrollToMapping(duplicateIndex);
@@ -438,9 +444,39 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       }
     };
 
-    const isAuto = getIsAuto();
+    // Compute the auto colors using the EXACT same function and inputs
+    // that the page background path and link-decorator.ts use, so the
+    // background swatch always matches the rendered note tint. When auto
+    // mode is on, we show the resolved background hex, not the stored
+    // CSS expression (e.g. hsla(var(--accent-h) ... 35%)).
+    const computeAutoColors = (): { backgroundHex: string; linkHex: string } => {
+      const themeVars = readBothThemeVars();
+      if (!themeVars) return { backgroundHex: '#808080', linkHex: '#808080' };
 
-    const getDisplayColor = () => this.resolveColorForDisplay(getIsAuto() ? autoDefault : getColor());
+      const tuning = this.plugin.settings.experimentalLinkTuning ?? { ...DEFAULT_LINK_TUNING };
+
+      const otherHexes = this.plugin.settings.colorMappings
+        .filter(m => m !== mapping)
+        .filter(m => !(isLight ? m.isAutoLinkLight : m.isAutoLinkDark))
+        .map(m => isLight ? m.linkColorLight : m.linkColorDark)
+        .filter((h): h is string => !!h);
+
+      try {
+        return computeAutoRuleColors(
+          mapping,
+          this.plugin.settings.colorMappings,
+          themeType,
+          themeVars,
+          otherHexes,
+          tuning
+        );
+      } catch (e) {
+        console.error('Page Color Prop: failed to compute auto background preview', e);
+        return { backgroundHex: '#808080', linkHex: '#808080' };
+      }
+    };
+
+    const getDisplayColor = () => this.resolveColorForDisplay(getIsAuto() ? computeAutoColors().backgroundHex : getColor());
     const updateSwatch = () => {
       const mode = getIsAuto() ? 'Auto from theme' : 'Manual';
       const displayColor = getDisplayColor();
@@ -605,24 +641,28 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       else mapping.linkColorDark = value;
     };
 
-    // Compute the auto link color using the EXACT same function and inputs
-    // that link-decorator.ts uses to color real links (file navigator,
-    // tabs, in-note links). Previously this settings preview had its own
-    // divergent formula (seeded from the rule's background color instead
-    // of the theme accent), which made the preview swatch show a color
-    // that never actually got applied anywhere else. Delegating to the
-    // shared service guarantees the preview is always what you get.
-    const computeAutoLinkHex = (): string => {
+    // Compute the auto colors using the EXACT same function and inputs
+    // that link-decorator.ts and the page background path use, so the
+    // preview swatch always matches what gets applied at runtime. The
+    // shared resolver returns both the tinted background and the link
+    // color; the preview paints both. Previously this preview had its
+    // own divergent formula (seeded from the rule's background color
+    // instead of the theme accent), which made the preview swatch
+    // show a color that never actually got applied anywhere else.
+    // Delegating to the shared service guarantees the preview is
+    // always what you get.
+    const computeAutoColors = (): { backgroundHex: string; linkHex: string } => {
       const themeVars = readBothThemeVars();
-      if (!themeVars) return '#808080';
+      if (!themeVars) return { backgroundHex: '#808080', linkHex: '#808080' };
 
       const tuning = this.plugin.settings.experimentalLinkTuning ?? { ...DEFAULT_LINK_TUNING };
 
-      // Gather other rules' already-assigned (manual) link hexes for the
-      // same theme, so this one doesn't collide visually with them. Other
-      // rules that are themselves in auto mode are skipped here, mirroring
-      // link-decorator.ts's getResolvedLinkColor to avoid an N^2 cascade
-      // and to keep the preview and the real renderer in lockstep.
+      // Gather other rules' already-assigned (manual) link hexes for
+      // the same theme, so this one doesn't collide visually with
+      // them. Other rules that are themselves in auto mode are
+      // skipped here, mirroring link-decorator.ts's getResolvedLinkColor
+      // to avoid an N^2 cascade and to keep the preview and the real
+      // renderer in lockstep.
       const otherHexes = this.plugin.settings.colorMappings
         .filter(m => m !== mapping)
         .filter(m => !(isLight ? m.isAutoLinkLight : m.isAutoLinkDark))
@@ -630,10 +670,17 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         .filter((h): h is string => !!h);
 
       try {
-        return resolveAutoLinkHex(mapping, themeType, themeVars, otherHexes, tuning);
+        return computeAutoRuleColors(
+          mapping,
+          this.plugin.settings.colorMappings,
+          themeType,
+          themeVars,
+          otherHexes,
+          tuning
+        );
       } catch (e) {
         console.error('Page Color Prop: failed to compute auto link color preview', e);
-        return '#808080';
+        return { backgroundHex: '#808080', linkHex: '#808080' };
       }
     };
 
@@ -646,7 +693,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     let colorPickerInput: HTMLInputElement | null = null;
     settingEl.addColorPicker(colorPicker => {
-      const initial = this.resolveColorForPicker(getColor() || computeAutoLinkHex());
+      const initial = this.resolveColorForPicker(getColor() || computeAutoColors().linkHex);
       colorPicker.setValue(initial).onChange(value => {
         setIsAuto(false);
         setColor(value);
@@ -677,7 +724,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         const nowAuto = !getIsAuto();
         setIsAuto(nowAuto);
         if (nowAuto) {
-          setColor(computeAutoLinkHex());
+          setColor(computeAutoColors().linkHex);
         } else if (colorPickerInput) {
           setColor(colorPickerInput.value);
         }
@@ -714,7 +761,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     const updatePreview = () => {
       const mode = getIsAuto() ? 'Auto (computed from background hue)' : 'Manual';
-      const displayed = getIsAuto() ? computeAutoLinkHex() : (getColor() || computeAutoLinkHex());
+      const displayed = getIsAuto() ? computeAutoColors().linkHex : (getColor() || computeAutoColors().linkHex);
       ruleLinkEl.style.color = displayed;
       preview.title = `${mode}: ${displayed}`;
       preview.ariaLabel = `${mode} link color: ${displayed}`;

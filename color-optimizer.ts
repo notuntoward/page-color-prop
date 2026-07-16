@@ -16,6 +16,8 @@
 // Obsidian can use.
 // ============================================================================
 
+import * as paletteMod from './rule-palette';
+
 // ---------------------------------------------------------------------------
 // VARIABLE / CONCEPT GLOSSARY (read this first, refer back to it later)
 // ---------------------------------------------------------------------------
@@ -121,6 +123,36 @@ export const DEFAULT_LINK_TUNING: LinkColorTuning = {
   minDeltaE: 0.12,
   minContrast: 4.5,
 };
+
+/**
+ * Inputs the optimizer needs for ONE theme variant (light or dark).
+ * Smaller and more focused than `ThemeInputs`: no base, no paired-theme
+ * fields, no optimization twin. Use this from the shared rule-color
+ * resolver, which is now called per-theme per-rule.
+ */
+export interface SingleThemeInputs {
+  backgroundHex: string;
+  textHex: string;
+  defaultLinkHex: string;
+  isLight: boolean;
+}
+
+/** Result of one link search: the chosen hex, the loss, and whether the
+ *  pathological fallback was used. */
+export interface LinkSearchResult {
+  hex: string;
+  loss: number;
+  fallbackUsed: boolean;
+}
+
+/** Result of one rule/theme optimization: a tinted background and a
+ *  readable special link, both derived from the same rule base hue. */
+export interface SingleThemeOutput {
+  backgroundHex: string;
+  linkHex: string;
+  loss: number;
+  fallbackUsed: boolean;
+}
 
 export class ColorMath {
 
@@ -363,8 +395,10 @@ export class ColorOptimizer {
   /** Finds a link color that: (1) reads clearly against the theme's
    *  normal (untinted) background, (2) doesn't look like plain body text,
    *  (3) doesn't look like the theme's normal link color, and (4) doesn't
-   *  look like any other rule's link color already chosen in this theme. */
-  private static findLink(
+   *  look like any other rule's link color already chosen in this theme.
+   *  Returns the full result (hex, loss, fallback flag) so callers can
+   *  prefer outputs that didn't trigger the fallback. */
+  private static findLinkDetailed(
     baseLch: OKLCh,
     boRgb: RGB,           // theme's default (untouched) background
     toLab: OKLab,         // theme's default body text color
@@ -372,7 +406,7 @@ export class ColorOptimizer {
     existingLinkLabs: OKLab[], // other rules' already-chosen link colors (same theme)
     isLight: boolean,
     tuning: LinkColorTuning   // TEMPORARY — remove once finalized, restore as hardcoded constants
-  ): string {
+  ): LinkSearchResult {
     const targetC = isLight ? 0.20 : 0.18;
     const targetL = isLight ? 0.40 : 0.75;
     // NOTE: dark minL is 0.65 (not 0.60). The V2 spec accidentally lowered
@@ -439,13 +473,160 @@ export class ColorOptimizer {
     }
 
     if (best) {
-      return ColorMath.rgbToHex(ColorMath.oklabToRgb(ColorMath.oklchToOklab(best)));
+      return {
+        hex: ColorMath.rgbToHex(
+          ColorMath.oklabToRgb(ColorMath.oklchToOklab(best))
+        ),
+        loss: bestLoss,
+        fallbackUsed: false,
+      };
     }
 
     // Pathological fallback (should be rare): derive from the background's
     // own hue rather than a hardcoded color, so the fallback still looks
     // related to the theme instead of always being the same fixed blue.
     const fallback: OKLCh = { L: isLight ? 0.35 : 0.80, C: 0.15, h: baseLch.h };
-    return ColorMath.rgbToHex(ColorMath.oklabToRgb(ColorMath.oklchToOklab(fallback)));
+    return {
+      hex: ColorMath.rgbToHex(
+        ColorMath.oklabToRgb(ColorMath.oklchToOklab(fallback))
+      ),
+      loss: Infinity,
+      fallbackUsed: true,
+    };
+  }
+
+  /** Thin wrapper that returns only the chosen hex string. Kept for
+   *  callers (and existing tests) that don't care about the loss /
+   *  fallback-flag metadata. */
+  private static findLink(
+    baseLch: OKLCh,
+    boRgb: RGB,
+    toLab: OKLab,
+    loLab: OKLab,
+    existingLinkLabs: OKLab[],
+    isLight: boolean,
+    tuning: LinkColorTuning
+  ): string {
+    return this.findLinkDetailed(
+      baseLch, boRgb, toLab, loLab, existingLinkLabs, isLight, tuning
+    ).hex;
+  }
+
+  /**
+   * Computes both background and link colors for one theme variant
+   * (light or dark) given a rule base LCh. The same base is used for
+   * both, so a rule's tint and its incoming link always belong to the
+   * same color family.
+   */
+  public static optimizeOneTheme(
+    baseLch: OKLCh,
+    theme: SingleThemeInputs,
+    existingLinkHexes: string[],
+    tuning: LinkColorTuning
+  ): SingleThemeOutput {
+    const backgroundRgb = ColorMath.hexToRgb(theme.backgroundHex);
+
+    const textLab = ColorMath.rgbToOklab(
+      ColorMath.hexToRgb(theme.textHex)
+    );
+
+    const defaultLinkLab = ColorMath.rgbToOklab(
+      ColorMath.hexToRgb(theme.defaultLinkHex)
+    );
+
+    const existingLinkLabs = existingLinkHexes.map(hex =>
+      ColorMath.rgbToOklab(ColorMath.hexToRgb(hex))
+    );
+
+    const backgroundHex = this.findBackground(
+      baseLch,
+      ColorMath.rgbToOklab(backgroundRgb),
+      theme.isLight
+    );
+
+    const link = this.findLinkDetailed(
+      baseLch,
+      backgroundRgb,
+      textLab,
+      defaultLinkLab,
+      existingLinkLabs,
+      theme.isLight,
+      tuning
+    );
+
+    return {
+      backgroundHex,
+      linkHex: link.hex,
+      loss: link.loss,
+      fallbackUsed: link.fallbackUsed,
+    };
+  }
+
+  /**
+   * Picks the rule's best base hue (and therefore the rule's
+   * background + link pair) by trying the rule's preferred palette
+   * offset first, then the rest of the curated palette, then a set of
+   * small fallback offsets. Results that did NOT trigger the
+   * pathological fallback are preferred; among those, the lowest
+   * total loss wins. If every attempt fell back, the offset closest
+   * to the rule's preferred palette identity is returned.
+   *
+   * The hard contrast / Delta E / gamut checks all live inside
+   * `findLinkDetailed` and `findBackground`; this method only changes
+   * WHICH starting color family the optimizer searches.
+   */
+  public static optimizeRuleFromAccent(
+    accentHex: string,
+    ruleId: string,
+    allRuleIds: string[],
+    theme: SingleThemeInputs,
+    existingLinkHexes: string[],
+    tuning: LinkColorTuning
+  ): SingleThemeOutput {
+    const accentLab = ColorMath.rgbToOklab(
+      ColorMath.hexToRgb(accentHex)
+    );
+    const accentLch = ColorMath.oklabToOklch(accentLab);
+
+    const assignments = paletteMod.assignRuleHueOffsets(allRuleIds);
+    const preferredOffset = assignments.get(ruleId) ?? 60;
+
+    let bestFeasible: SingleThemeOutput | null = null;
+    let bestFeasibleLoss = Infinity;
+
+    let bestFallback: SingleThemeOutput | null = null;
+    let bestFallbackPenalty = Infinity;
+
+    for (const offset of paletteMod.orderedRuleHueOffsets(preferredOffset)) {
+      const baseLch = paletteMod.deriveBaseLch(accentLch, offset);
+
+      const result = this.optimizeOneTheme(
+        baseLch,
+        theme,
+        existingLinkHexes,
+        tuning
+      );
+
+      const palettePenalty = Math.abs(offset - preferredOffset) * 0.25;
+      const totalLoss = result.loss + palettePenalty;
+
+      if (!result.fallbackUsed) {
+        if (totalLoss < bestFeasibleLoss) {
+          bestFeasible = result;
+          bestFeasibleLoss = totalLoss;
+        }
+        continue;
+      }
+
+      if (palettePenalty < bestFallbackPenalty) {
+        bestFallback = result;
+        bestFallbackPenalty = palettePenalty;
+      }
+    }
+
+    if (bestFeasible) return bestFeasible;
+    if (bestFallback) return bestFallback;
+
+    throw new Error('Rule palette optimizer returned no result');
   }
 }

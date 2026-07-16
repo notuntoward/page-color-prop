@@ -15,6 +15,7 @@ class MinimalPlugin {
 
 function mapping(overrides: Partial<PropertyColorMapping> = {}): PropertyColorMapping {
   return {
+    id: 'test-rule-a',
     property: 'tags',
     value: 'ai-generated',
     colorLight: '#4e66d0',
@@ -153,18 +154,21 @@ describe('computeAutoLinkHex', () => {
     expect(result).toMatch(/^#[0-9a-f]{6}$/);
   });
 
-  it('returns the SAME link color for two rules that differ only in their background fields (seed no longer depends on the background)', () => {
-    // After the accent-seed change, the rule's colorLight/colorDark and
+  it('returns the SAME link color for two rules with the same id (seed no longer depends on the background)', () => {
+    // After the palette change, the rule's colorLight/colorDark and
     // isAutoLight/isAutoDark are no longer read inside computeAutoLinkHex.
-    // Two rules with identical theme input but different background fields
-    // must therefore produce identical link colors, proving the seed hue
-    // is no longer diluted by the background.
+    // Two rules with identical id (and therefore identical palette
+    // identity) but different background fields must produce identical
+    // link colors, proving the seed hue is no longer diluted by the
+    // background. Distinct ids get distinct palette slots and are
+    // therefore allowed to produce distinct link colors.
     const themeVars = {
       bo_l: '#ffffff', bo_d: '#1e1e1e',
       to_l: '#2e2e2e', to_d: '#dbdbdb',
       lo_l: '#2463d1', lo_d: '#58a6ff'
     };
     const ruleA = mapping({
+      id: 'test-rule-a',
       // "auto" background — deliberately the most diluted seed we'd
       // previously have routed through.
       isAutoLight: true,
@@ -173,6 +177,7 @@ describe('computeAutoLinkHex', () => {
       colorDark: 'hsla(var(--accent-h), var(--accent-s), 25%, 0.30)'
     });
     const ruleB = mapping({
+      id: 'test-rule-a',
       // Very different manual background — would have given a different
       // old-style seed hue.
       isAutoLight: false,

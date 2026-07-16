@@ -29,16 +29,6 @@ interface ColorMappingMatch {
 	propertyValue: FrontmatterValue;
 }
 
-export interface ResolveLinkColorInputs {
-	base: string;
-	bo_l: string;
-	bo_d: string;
-	to_l: string;
-	to_d: string;
-	lo_l: string;
-	lo_d: string;
-}
-
 export interface ThemeCssVars {
 	/** Light-theme `--background-primary` resolved to a hex string. */
 	bo_l: string;
@@ -173,50 +163,91 @@ function readWithBodyClass(body: HTMLElement, to: 'Light' | 'Dark') {
 }
 
 /**
+ * The pair of auto-computed colors for a single rule: a tinted page
+ * background and a readable special link. Both come from the same
+ * rule base hue so they feel related. The shared resolver (used by the
+ * page background path, the link-decoration path, the tab color path,
+ * and the settings preview) returns this shape so all four call sites
+ * can stay in lockstep.
+ */
+export interface ResolvedRuleColors {
+  backgroundHex: string;
+  linkHex: string;
+}
+
+/**
+ * The single source of truth for auto background + auto link color for
+ * one rule in one theme. Reads the theme accent via `ACCENT_SEED_COLOR`,
+ * derives a palette-relative base hue from the rule's id, and asks the
+ * optimizer to pick the best (background, link) pair that satisfies
+ * the hard contrast / Delta E / gamut constraints.
+ *
+ * All four runtime callers (page background, link decoration, tab
+ * text, settings preview) go through this function so they cannot
+ * drift apart.
+ */
+export function computeAutoRuleColors(
+  mapping: PropertyColorMapping,
+  allMappings: PropertyColorMapping[],
+  theme: 'Light' | 'Dark',
+  themeVars: ThemeCssVars,
+  otherLinkHexes: string[],
+  tuning: LinkColorTuning = DEFAULT_LINK_TUNING
+): ResolvedRuleColors {
+  const isLight = theme === 'Light';
+
+  const accentHex = readThemeCssVar(ACCENT_SEED_COLOR);
+  if (!accentHex) {
+    return {
+      backgroundHex: '#808080',
+      linkHex: '#808080',
+    };
+  }
+
+  const result = ColorOptimizer.optimizeRuleFromAccent(
+    accentHex,
+    mapping.id,
+    allMappings.map(other => other.id),
+    {
+      backgroundHex: isLight ? themeVars.bo_l : themeVars.bo_d,
+      textHex: isLight ? themeVars.to_l : themeVars.to_d,
+      defaultLinkHex: isLight ? themeVars.lo_l : themeVars.lo_d,
+      isLight,
+    },
+    otherLinkHexes,
+    tuning
+  );
+
+  return {
+    backgroundHex: result.backgroundHex,
+    linkHex: result.linkHex,
+  };
+}
+
+/**
  * Computes the auto link color for a mapping in the requested theme.
  *
- * The seed hue is derived from the theme's raw accent color at full
- * strength (50% lightness, no alpha), NOT from the rule's own background.
- * The background is deliberately a washed-out tint (e.g. 90% lightness
- * with 0.35 alpha in light mode), which is correct for a background but
- * dilutes the hue signal so badly that the optimizer's search starts from
- * a nearly colorless point — especially in light mode. Seeding from the
- * accent directly gives the optimizer a strong, stable anchor. Background
- * and link colors still share the same accent hue family, so the design
- * intent (a link that feels related to its target's background) is
- * preserved; the background's `bo` is still used as the contrast target.
- *
- * `otherHexes` should contain the hex strings of link colors already
- * assigned to OTHER rules in the same theme, so we don't pick a color
- * that visually collides with them.
+ * Thin wrapper over `computeAutoRuleColors` kept for callers (and
+ * existing tests) that only need the link half. New code should prefer
+ * `computeAutoRuleColors` so the runtime page background, the link
+ * decoration, the tab color, and the settings preview all share one
+ * resolution path.
  */
 export function computeAutoLinkHex(
-	mapping: PropertyColorMapping,
-	theme: 'Light' | 'Dark',
-	themeVars: ThemeCssVars,
-	otherHexes: string[],
-	tuning: LinkColorTuning = DEFAULT_LINK_TUNING
+  mapping: PropertyColorMapping,
+  theme: 'Light' | 'Dark',
+  themeVars: ThemeCssVars,
+  otherHexes: string[],
+  tuning: LinkColorTuning = DEFAULT_LINK_TUNING
 ): string {
-	const isLight = theme === 'Light';
-	const baseHex = readThemeCssVar(ACCENT_SEED_COLOR);
-	if (!baseHex) return '#808080';
-
-	const bo = isLight ? themeVars.bo_l : themeVars.bo_d;
-	const to = isLight ? themeVars.to_l : themeVars.to_d;
-	const lo = isLight ? themeVars.lo_l : themeVars.lo_d;
-
-	const inputs: ResolveLinkColorInputs = {
-		base: baseHex,
-		bo_l: bo,
-		bo_d: bo,
-		to_l: to,
-		to_d: to,
-		lo_l: lo,
-		lo_d: lo
-	};
-	const existing = { light: isLight ? otherHexes : [], dark: isLight ? [] : otherHexes };
-	const result = ColorOptimizer.optimize(inputs, existing, tuning);
-	return isLight ? result.lc_l : result.lc_d;
+  return computeAutoRuleColors(
+    mapping,
+    [mapping],
+    theme,
+    themeVars,
+    otherHexes,
+    tuning
+  ).linkHex;
 }
 
 // Re-export types the plugin needs to reference.

@@ -1,11 +1,12 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import PageColorPropPlugin from '../main.ts';
-import { DEFAULT_DARK_AUTO_COLOR, DEFAULT_LIGHT_AUTO_COLOR, type PageColorPropSettings, type PropertyColorMapping } from '../settings';
+import { type PageColorPropSettings, type PropertyColorMapping } from '../settings';
 import { MarkdownView, mockedNotice } from './obsidian.mock';
 
 
 function mapping(overrides: Partial<PropertyColorMapping> = {}): PropertyColorMapping {
   return {
+    id: 'test-rule-a',
     property: 'tags',
     value: 'ai-generated',
     colorLight: '#4e66d0',
@@ -174,7 +175,11 @@ describe('PageColorPropPlugin', () => {
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
 
-  it('migrates legacy color mappings', async () => {
+  it('drops legacy color mappings that lack a stable id', async () => {
+    // Per the accent-relative palette change, mappings without an `id`
+    // are intentionally treated as invalid. The user must recreate them
+    // in this disruptive release. We deliberately do NOT migrate legacy
+    // auto-color fields or generate ids for old entries.
     const plugin = createPlugin();
     plugin.loadData.mockResolvedValue({
       colorMappings: [
@@ -191,17 +196,13 @@ describe('PageColorPropPlugin', () => {
 
     await plugin.loadSettings();
 
-    expect(plugin.settings.colorMappings[0]).toMatchObject({
-      property: 'tags',
-      value: 'ai-generated',
-      colorLight: '#123456',
-      colorDark: '#123456',
-      isAutoLight: false,
-      isAutoDark: false,
-      matchType: 'contains'
-    });
+    // The legacy mapping is filtered out by isValidMapping because it
+    // has no `id`. We do not save anything back, since this is a
+    // intentionally-disruptive release that does not preserve legacy
+    // auto colors.
+    expect(plugin.settings.colorMappings).toEqual([]);
     expect(plugin.settings.notifyOnMultipleMatches).toBe(false);
-    expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+    expect(plugin.saveSettings).not.toHaveBeenCalled();
   });
 
   it('finds exact, contains, and lowest-priority matches', () => {
@@ -275,11 +276,17 @@ describe('PageColorPropPlugin', () => {
       ]
     });
 
-    expect(plugin.getMappingColor(plugin.settings.colorMappings[0])).toBe(DEFAULT_LIGHT_AUTO_COLOR);
+    // Auto mode now resolves through the shared palette-relative
+    // resolver, which needs a `linkDecorator` with cached theme
+    // variables. With no decorator, the function returns null (the
+    // caller is expected to handle null — see `applyColorsToAllLeaves`).
+    // We assert the null behavior here and exercise the real
+    // auto-resolution path separately via the link-decorator tests.
+    expect(plugin.getMappingColor(plugin.settings.colorMappings[0])).toBe('');
 
     plugin.isDarkTheme = true;
 
-    expect(plugin.getMappingColor(plugin.settings.colorMappings[0])).toBe(DEFAULT_DARK_AUTO_COLOR);
+    expect(plugin.getMappingColor(plugin.settings.colorMappings[0])).toBe('');
 
     plugin.settings.colorMappings = [
       mapping({ colorLight: '#111111', colorDark: '#222222', isAutoLight: false, isAutoDark: false })

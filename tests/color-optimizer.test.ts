@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ColorOptimizer, ColorMath, DEFAULT_LINK_TUNING, type ThemeInputs } from "../color-optimizer";
+import { assignRuleHueOffsets } from "../rule-palette";
+import type { SingleThemeInputs } from "../color-optimizer";
 
 const mockBaseThemes: { name: string; inputs: ThemeInputs }[] = [
   {
@@ -171,6 +173,140 @@ describe("Color Optimizer Core Tests", () => {
       expect(ColorMath.deltaE(candidateLight, existing2Light)).toBeGreaterThanOrEqual(DEFAULT_LINK_TUNING.minDeltaE);
       expect(ColorMath.deltaE(candidateDark, existing1Dark)).toBeGreaterThanOrEqual(DEFAULT_LINK_TUNING.minDeltaE);
       expect(ColorMath.deltaE(candidateDark, existing2Dark)).toBeGreaterThanOrEqual(DEFAULT_LINK_TUNING.minDeltaE);
+    });
+  });
+});
+
+describe("Accent-relative rule palette", () => {
+  describe("Stable rule identity", () => {
+    it("keeps a rule palette assignment stable across list reordering", () => {
+      const first = assignRuleHueOffsets(["rule-a", "rule-b", "rule-c"]);
+      const reordered = assignRuleHueOffsets(["rule-c", "rule-a", "rule-b"]);
+      expect(reordered.get("rule-a")).toBe(first.get("rule-a"));
+      expect(reordered.get("rule-b")).toBe(first.get("rule-b"));
+      expect(reordered.get("rule-c")).toBe(first.get("rule-c"));
+    });
+
+    it("assigns five unique preferred offsets to five rules", () => {
+      const assignments = assignRuleHueOffsets([
+        "rule-a",
+        "rule-b",
+        "rule-c",
+        "rule-d",
+        "rule-e",
+      ]);
+      expect(new Set(assignments.values()).size).toBe(5);
+    });
+  });
+
+  describe("optimizeRuleFromAccent", () => {
+    const lightTheme: SingleThemeInputs = {
+      backgroundHex: "#ffffff",
+      textHex: "#242424",
+      defaultLinkHex: "#2463d1",
+      isLight: true,
+    };
+
+    it("finds a distinct rule link when accent and default link are identical", () => {
+      const accentHex = "#3b82f6";
+      const theme: SingleThemeInputs = {
+        backgroundHex: "#ffffff",
+        textHex: "#242424",
+        defaultLinkHex: accentHex,
+        isLight: true,
+      };
+      const result = ColorOptimizer.optimizeRuleFromAccent(
+        accentHex,
+        "rule-a",
+        ["rule-a", "rule-b"],
+        theme,
+        [],
+        DEFAULT_LINK_TUNING
+      );
+
+      const linkRgb = ColorMath.hexToRgb(result.linkHex);
+      const linkLab = ColorMath.rgbToOklab(linkRgb);
+      const defaultLinkLab = ColorMath.rgbToOklab(
+        ColorMath.hexToRgb(accentHex)
+      );
+
+      expect(ColorMath.getContrast(
+        linkRgb,
+        ColorMath.hexToRgb(theme.backgroundHex)
+      )).toBeGreaterThanOrEqual(DEFAULT_LINK_TUNING.minContrast);
+
+      expect(ColorMath.deltaE(linkLab, defaultLinkLab))
+        .toBeGreaterThanOrEqual(DEFAULT_LINK_TUNING.minDeltaE);
+
+      expect(result.linkHex).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(result.backgroundHex).toMatch(/^#[0-9a-f]{6}$/i);
+    });
+
+    it("keeps an automatic rule background and link broadly related", () => {
+      const result = ColorOptimizer.optimizeRuleFromAccent(
+        "#3b82f6",
+        "rule-a",
+        ["rule-a"],
+        lightTheme,
+        [],
+        DEFAULT_LINK_TUNING
+      );
+
+      const bgLch = ColorMath.oklabToOklch(
+        ColorMath.rgbToOklab(ColorMath.hexToRgb(result.backgroundHex))
+      );
+      const linkLch = ColorMath.oklabToOklch(
+        ColorMath.rgbToOklab(ColorMath.hexToRgb(result.linkHex))
+      );
+
+      const hueDistance = Math.min(
+        Math.abs(bgLch.h - linkLch.h),
+        360 - Math.abs(bgLch.h - linkLch.h)
+      );
+
+      expect(hueDistance).toBeLessThanOrEqual(90);
+    });
+
+    it("keeps an auto link distinct from other manual rule links", () => {
+      const otherManualLink = "#a72d61";
+      const result = ColorOptimizer.optimizeRuleFromAccent(
+        "#3b82f6",
+        "rule-a",
+        ["rule-a", "rule-b"],
+        lightTheme,
+        [otherManualLink],
+        DEFAULT_LINK_TUNING
+      );
+
+      const resultLab = ColorMath.rgbToOklab(
+        ColorMath.hexToRgb(result.linkHex)
+      );
+      const otherLab = ColorMath.rgbToOklab(
+        ColorMath.hexToRgb(otherManualLink)
+      );
+
+      expect(ColorMath.deltaE(resultLab, otherLab))
+        .toBeGreaterThanOrEqual(DEFAULT_LINK_TUNING.minDeltaE);
+    });
+
+    it("returns identical auto colors for identical inputs (resolver parity)", () => {
+      const a = ColorOptimizer.optimizeRuleFromAccent(
+        "#3b82f6",
+        "rule-a",
+        ["rule-a"],
+        lightTheme,
+        [],
+        DEFAULT_LINK_TUNING
+      );
+      const b = ColorOptimizer.optimizeRuleFromAccent(
+        "#3b82f6",
+        "rule-a",
+        ["rule-a"],
+        lightTheme,
+        [],
+        DEFAULT_LINK_TUNING
+      );
+      expect(a).toEqual(b);
     });
   });
 });

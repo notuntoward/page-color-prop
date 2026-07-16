@@ -25,7 +25,7 @@ import { TFile, getLinkpath } from 'obsidian';
 import type PageColorPropPlugin from './main';
 import type { PropertyColorMapping } from './settings';
 import {
-	computeAutoLinkHex,
+	computeAutoRuleColors,
 	findMatchingColorMappings,
 	readBothThemeVars,
 	type ThemeCssVars
@@ -75,6 +75,16 @@ export class LinkDecorator {
 			this.themeVars = readBothThemeVars();
 		}
 		return this.themeVars;
+	}
+
+	/**
+	 * Public read-only access to the cached theme variables. Used by
+	 * the page background path in main.ts so it can resolve the same
+	 * automatic pair that the link decoration uses, without poking at
+	 * private internals.
+	 */
+	public getThemeVarsForSharedUse(): ThemeCssVars | null {
+		return this.getThemeVars();
 	}
 
 	/**
@@ -130,13 +140,14 @@ export class LinkDecorator {
 		}
 
 		try {
-			return computeAutoLinkHex(
+			return computeAutoRuleColors(
 				mapping,
+				this.plugin.settings.colorMappings,
 				isLight ? 'Light' : 'Dark',
 				themeVars,
 				otherHexes,
 				this.plugin.settings.experimentalLinkTuning
-			);
+			).linkHex;
 		} catch (e) {
 			console.error('Page Color Prop: failed to compute auto link color', e);
 			return null;

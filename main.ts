@@ -1,7 +1,5 @@
 import { MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import {
-	DEFAULT_DARK_AUTO_COLOR,
-	DEFAULT_LIGHT_AUTO_COLOR,
 	PageColorPropSettings,
 	DEFAULT_SETTINGS,
 	PageColorPropSettingTab,
@@ -9,7 +7,7 @@ import {
 } from './settings';
 import { DEFAULT_LINK_TUNING } from './color-optimizer';
 import { LinkDecorator } from './link-decorator';
-import { findMatchingColorMappings } from './link-color-service';
+import { computeAutoRuleColors, findMatchingColorMappings } from './link-color-service';
 import { buildPageColorPropLivePreviewExtension, forceRecomputeEffect } from './live-preview-links';
 
 type FrontmatterValue = string | number | boolean | null | undefined | FrontmatterValue[];
@@ -175,7 +173,8 @@ export default class PageColorPropPlugin extends Plugin {
 		if (!mapping || typeof mapping !== 'object') return false;
 
 		const candidate = mapping as Partial<PropertyColorMapping>;
-		return typeof candidate.property === 'string' &&
+		return typeof candidate.id === 'string' && candidate.id.length > 0 &&
+			typeof candidate.property === 'string' &&
 			typeof candidate.value === 'string' &&
 			(candidate.matchType === 'exact' || candidate.matchType === 'contains');
 	}
@@ -445,11 +444,52 @@ export default class PageColorPropPlugin extends Plugin {
 	}
 
 	private getMappingColor(mapping: PropertyColorMapping): string {
-		if (this.isDarkTheme) {
-			return mapping.isAutoDark ? DEFAULT_DARK_AUTO_COLOR : mapping.colorDark;
+		// Resolve through the shared rule-color resolver so the page
+		// background, the link decoration, the tab text, and the
+		// settings preview all derive their automatic colors from the
+		// same palette base.
+		return this.getMappingBackgroundColor(mapping) ?? '';
+	}
+
+	/**
+	 * Resolves the page background color for a single mapping in the
+	 * current theme. Manual colors pass through untouched. Automatic
+	 * colors are produced by the same shared resolver
+	 * (`computeAutoRuleColors`) that powers the link decoration, so
+	 * the runtime tint and the runtime link stay in the same color
+	 * family.
+	 */
+	private getMappingBackgroundColor(mapping: PropertyColorMapping): string | null {
+		const isLight = !this.isDarkTheme;
+
+		if (isLight && !mapping.isAutoLight) {
+			return mapping.colorLight;
 		}
 
-		return mapping.isAutoLight ? DEFAULT_LIGHT_AUTO_COLOR : mapping.colorLight;
+		if (!isLight && !mapping.isAutoDark) {
+			return mapping.colorDark;
+		}
+
+		const themeVars = this.linkDecorator?.getThemeVarsForSharedUse();
+		if (!themeVars) return null;
+
+		const otherManualLinkHexes: string[] = [];
+		for (const m of this.settings.colorMappings) {
+			if (m === mapping) continue;
+			const otherIsAuto = isLight ? m.isAutoLinkLight : m.isAutoLinkDark;
+			if (otherIsAuto) continue;
+			const otherHex = isLight ? m.linkColorLight : m.linkColorDark;
+			if (otherHex) otherManualLinkHexes.push(otherHex);
+		}
+
+		return computeAutoRuleColors(
+			mapping,
+			this.settings.colorMappings,
+			isLight ? 'Light' : 'Dark',
+			themeVars,
+			otherManualLinkHexes,
+			this.settings.experimentalLinkTuning
+		).backgroundHex;
 	}
 
 	private findMatchingColorMappings(frontmatter: Frontmatter): { selected: ColorMappingMatch | null; matches: ColorMappingMatch[] } {
