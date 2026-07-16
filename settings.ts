@@ -1,6 +1,7 @@
 import { App, Modal, PluginSettingTab, setIcon, Setting } from 'obsidian';
 import type PageColorPropPlugin from './main';
-import { ColorOptimizer, DEFAULT_LINK_TUNING, type LinkColorTuning } from './color-optimizer';
+import { DEFAULT_LINK_TUNING, type LinkColorTuning } from './color-optimizer';
+import { computeAutoLinkHex as resolveAutoLinkHex, readBothThemeVars } from './link-color-service';
 
 export interface PropertyColorMapping {
   property: string;
@@ -604,64 +605,36 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       else mapping.linkColorDark = value;
     };
 
-    // Compute the auto link color using the color-optimizer engine.
-    // We treat the rule's *background* color (auto or manual) as the base
-    // accent the engine should derive a link hue from. For "other rules'
-    // already-assigned link colors" (multi-rule collision avoidance), we
-    // pass every other rule's stored link color for this theme.
+    // Compute the auto link color using the EXACT same function and inputs
+    // that link-decorator.ts uses to color real links (file navigator,
+    // tabs, in-note links). Previously this settings preview had its own
+    // divergent formula (seeded from the rule's background color instead
+    // of the theme accent), which made the preview swatch show a color
+    // that never actually got applied anywhere else. Delegating to the
+    // shared service guarantees the preview is always what you get.
     const computeAutoLinkHex = (): string => {
-      const baseColor = isLight
-        ? (mapping.isAutoLight ? DEFAULT_LIGHT_AUTO_COLOR : mapping.colorLight)
-        : (mapping.isAutoDark ? DEFAULT_DARK_AUTO_COLOR : mapping.colorDark);
-      const baseHex = this.resolveColorForOptimizer(baseColor);
-      if (!baseHex) return '#808080';
-
-      // Read theme variables for THIS theme (not the currently active one),
-      // so the dark preview swatch and dark link math always use the dark
-      // theme's defaults even when the user is currently in light mode.
-      const themeName: 'Light' | 'Dark' = isLight ? 'Light' : 'Dark';
-      const bo_l = this.resolveColorForOptimizerForTheme('var(--background-primary)', 'Light');
-      const bo_d = this.resolveColorForOptimizerForTheme('var(--background-primary)', 'Dark');
-      const to_l = this.resolveColorForOptimizerForTheme('var(--text-normal)', 'Light');
-      const to_d = this.resolveColorForOptimizerForTheme('var(--text-normal)', 'Dark');
-      const lo_l = this.resolveColorForOptimizerForTheme('var(--link-color)', 'Light');
-      const lo_d = this.resolveColorForOptimizerForTheme('var(--link-color)', 'Dark');
-      if (!bo_l || !bo_d || !to_l || !to_d || !lo_l || !lo_d) return '#808080';
+      const themeVars = readBothThemeVars();
+      if (!themeVars) return '#808080';
 
       const tuning = this.plugin.settings.experimentalLinkTuning ?? { ...DEFAULT_LINK_TUNING };
 
-      // Gather other rules' link hexes for the same theme, so this one
-      // doesn't collide visually with them.
-      const otherLight = this.plugin.settings.colorMappings
+      // Gather other rules' already-assigned (manual) link hexes for the
+      // same theme, so this one doesn't collide visually with them. Other
+      // rules that are themselves in auto mode are skipped here, mirroring
+      // link-decorator.ts's getResolvedLinkColor to avoid an N^2 cascade
+      // and to keep the preview and the real renderer in lockstep.
+      const otherHexes = this.plugin.settings.colorMappings
         .filter(m => m !== mapping)
-        .map(m => this.resolveColorForOptimizerForTheme(
-          m.isAutoLinkLight ? this.computeAutoLinkHexFor(m, 'Light') : m.linkColorLight,
-          'Light'
-        ))
-        .filter((h): h is string => !!h);
-      const otherDark = this.plugin.settings.colorMappings
-        .filter(m => m !== mapping)
-        .map(m => this.resolveColorForOptimizerForTheme(
-          m.isAutoLinkDark ? this.computeAutoLinkHexFor(m, 'Dark') : m.linkColorDark,
-          'Dark'
-        ))
+        .filter(m => !(isLight ? m.isAutoLinkLight : m.isAutoLinkDark))
+        .map(m => isLight ? m.linkColorLight : m.linkColorDark)
         .filter((h): h is string => !!h);
 
-      const result = ColorOptimizer.optimize(
-        {
-          base: baseHex,
-          bo_l,
-          bo_d,
-          to_l,
-          to_d,
-          lo_l,
-          lo_d
-        },
-        { light: otherLight, dark: otherDark },
-        tuning
-      );
-
-      return isLight ? result.lc_l : result.lc_d;
+      try {
+        return resolveAutoLinkHex(mapping, themeType, themeVars, otherHexes, tuning);
+      } catch (e) {
+        console.error('Page Color Prop: failed to compute auto link color preview', e);
+        return '#808080';
+      }
     };
 
     const settingContainer = containerEl.createDiv('page-color-prop-color-setting-container page-color-prop-link-setting');
@@ -763,53 +736,6 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       updatePreview();
       openColorPicker();
     });
-  }
-
-  /** Compute the auto link hex for an arbitrary mapping (used to gather
-   *  "other rules' link colors" without recursing through the UI). */
-  private computeAutoLinkHexFor(mapping: PropertyColorMapping, theme: 'Light' | 'Dark'): string {
-    const isLight = theme === 'Light';
-    const baseColor = isLight
-      ? (mapping.isAutoLight ? DEFAULT_LIGHT_AUTO_COLOR : mapping.colorLight)
-      : (mapping.isAutoDark ? DEFAULT_DARK_AUTO_COLOR : mapping.colorDark);
-    const baseHex = this.resolveColorForOptimizerForTheme(baseColor, theme);
-    if (!baseHex) return '';
-    const bo = this.resolveColorForOptimizerForTheme('var(--background-primary)', theme);
-    const to = this.resolveColorForOptimizerForTheme('var(--text-normal)', theme);
-    const lo = this.resolveColorForOptimizerForTheme('var(--link-color)', theme);
-    if (!bo || !to || !lo) return '';
-    const tuning = this.plugin.settings.experimentalLinkTuning ?? { ...DEFAULT_LINK_TUNING };
-    const result = ColorOptimizer.optimize(
-      { base: baseHex, bo_l: bo, bo_d: bo, to_l: to, to_d: to, lo_l: lo, lo_d: lo },
-      { light: [], dark: [] },
-      tuning
-    );
-    return isLight ? result.lc_l : result.lc_d;
-  }
-
-  /** Resolves any color string (hex, rgb, or var(--...)) to a clean
-   *  6-digit hex string, using the currently active theme. */
-  private resolveColorForOptimizer(color: string): string | null {
-    return this.resolveColorForOptimizerForTheme(color, null);
-  }
-
-  /** Resolves any color string to a 6-digit hex using a SPECIFIC theme
-   *  (so dark-theme values are correct even when the user is in light mode). */
-  private resolveColorForOptimizerForTheme(color: string, theme: 'Light' | 'Dark' | null): string | null {
-    if (!color || typeof color !== 'string') return null;
-    if (color.includes('var(--')) {
-      return this.computeColorFromThemeVarsForTheme(color, theme) || null;
-    }
-    const hexMatch = color.match(/#[0-9A-Fa-f]{6}/);
-    if (hexMatch) return hexMatch[0];
-    const rgbMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-    if (rgbMatch) {
-      const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0');
-      const g = parseInt(rgbMatch[2]).toString(16).padStart(2, '0');
-      const b = parseInt(rgbMatch[3]).toString(16).padStart(2, '0');
-      return `#${r}${g}${b}`;
-    }
-    return null;
   }
 
   private resolveColorForPicker(color: string): string {
