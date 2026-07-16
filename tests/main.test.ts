@@ -373,6 +373,34 @@ describe('PageColorPropPlugin', () => {
     expect(leaf.tabHeaderEl.classList.contains('page-color-prop-tab')).toBe(false);
   });
 
+  it('removes existing tab color when tab coloring is toggled off', () => {
+    const file = {
+      path: 'Politics/Seattle/ai-searches/note.md',
+      basename: 'note'
+    };
+    const leaf = createLeaf(file);
+    leaf.tabHeaderEl.classList.add('page-color-prop-tab');
+    leaf.tabHeaderEl.style.setProperty('--page-color-prop-tab-color', '#1a5fb4');
+    const plugin = createPlugin({
+      colorMappings: [
+        mapping({ colorLight: '#4e66d0', isAutoLight: false })
+      ]
+    });
+    plugin.settings.colorTabText = false;
+    plugin.linkDecorator = {
+      getResolvedLinkColor: vi.fn(() => '#1a5fb4')
+    } as any;
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+    plugin.app.metadataCache.getFileCache.mockReturnValue({
+      frontmatter: { tags: ['ai-generated'] }
+    });
+
+    plugin.applyColorsToAllLeaves();
+
+    expect(leaf.tabHeaderEl.classList.contains('page-color-prop-tab')).toBe(false);
+    expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color-prop-tab-color')).toBe('');
+  });
+
   it('removes stale tab styles while preserving active ones', () => {
     const file = {
       path: 'Politics/Seattle/ai-searches/note.md',

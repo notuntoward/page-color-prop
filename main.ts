@@ -500,6 +500,11 @@ export default class PageColorPropPlugin extends Plugin {
 
 	private applyTabColorToLeaf(leaf: WorkspaceLeaf, mapping: PropertyColorMapping) {
 		if (!this.settings.colorTabText || !this.linkDecorator) {
+			// Setting is off or decorator unavailable: actively remove any existing
+			// tab color rather than leaving stale styling in place. This mirrors how
+			// removeBackgroundColorFromLeaf works — when a color shouldn't be applied,
+			// we explicitly clear it instead of just skipping.
+			this.removeTabColorFromLeaf(leaf);
 			return;
 		}
 
