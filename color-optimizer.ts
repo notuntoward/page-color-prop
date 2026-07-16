@@ -303,15 +303,15 @@ export class ColorOptimizer {
     const bc_lRgb = ColorMath.hexToRgb(bc_l);
     const bc_dRgb = ColorMath.hexToRgb(bc_d);
 
-    // Step 2: compute the link color, now that we know the actual
-    // background it will be paired with (bc_l / bc_d), plus the theme's
-    // untouched default background (bo_l / bo_d) — link must read clearly
-    // against BOTH, since a note might briefly render with either.
+    // Step 2: compute the link color for each theme. Links are only
+    // shown against the theme's own normal (untinted) background, so
+    // contrast is checked only against bo_l / bo_d, not against the page
+    // Color Prop tinted background.
     const existingLightLabs = existingLinkHexes.light.map(h => ColorMath.rgbToOklab(ColorMath.hexToRgb(h)));
     const existingDarkLabs = existingLinkHexes.dark.map(h => ColorMath.rgbToOklab(ColorMath.hexToRgb(h)));
 
-    const lc_l = this.findLink(baseLch, bo_lRgb, bc_lRgb, to_lLab, lo_lLab, existingLightLabs, true, tuning);
-    const lc_d = this.findLink(baseLch, bo_dRgb, bc_dRgb, to_dLab, lo_dLab, existingDarkLabs, false, tuning);
+    const lc_l = this.findLink(baseLch, bo_lRgb, to_lLab, lo_lLab, existingLightLabs, true, tuning);
+    const lc_d = this.findLink(baseLch, bo_dRgb, to_dLab, lo_dLab, existingDarkLabs, false, tuning);
 
     return { bc_l, bc_d, lc_l, lc_d };
   }
@@ -360,17 +360,16 @@ export class ColorOptimizer {
     return ColorMath.rgbToHex(ColorMath.oklabToRgb(ColorMath.oklchToOklab(best)));
   }
 
-  /** Finds a link color that: (1) reads clearly against both backgrounds,
-   *  (2) doesn't look like plain body text, (3) doesn't look like the
-   *  theme's normal link color, and (4) [EXTENSION] doesn't look like any
-   *  other rule's link color already chosen in this theme. */
+  /** Finds a link color that: (1) reads clearly against the theme's
+   *  normal (untinted) background, (2) doesn't look like plain body text,
+   *  (3) doesn't look like the theme's normal link color, and (4) doesn't
+   *  look like any other rule's link color already chosen in this theme. */
   private static findLink(
     baseLch: OKLCh,
     boRgb: RGB,           // theme's default (untouched) background
-    bcRgb: RGB,            // this rule's new tinted background
-    toLab: OKLab,           // theme's default body text color
-    loLab: OKLab,           // theme's default link color
-    existingLinkLabs: OKLab[], // [EXTENSION] other rules' already-chosen link colors (same theme)
+    toLab: OKLab,         // theme's default body text color
+    loLab: OKLab,         // theme's default link color
+    existingLinkLabs: OKLab[], // other rules' already-chosen link colors (same theme)
     isLight: boolean,
     tuning: LinkColorTuning   // TEMPORARY — remove once finalized, restore as hardcoded constants
   ): string {
@@ -403,10 +402,9 @@ export class ColorOptimizer {
           const candidateLab = ColorMath.oklchToOklab(candidate);
           const candidateRgb = ColorMath.oklabToRgb(candidateLab);
 
-          // Must be readable against BOTH the plain default background
-          // and this rule's own tinted background.
+          // Must be readable against the theme's normal (untinted)
+          // background.
           if (ColorMath.getContrast(candidateRgb, boRgb) < tuning.minContrast) continue;
-          if (ColorMath.getContrast(candidateRgb, bcRgb) < tuning.minContrast) continue;
 
           // Must not be confusable with plain body text.
           if (ColorMath.deltaE(candidateLab, toLab) < tuning.minDeltaE) continue;

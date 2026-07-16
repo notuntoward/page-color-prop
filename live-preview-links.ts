@@ -25,12 +25,14 @@
 // ============================================================================
 
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, ViewUpdate, WidgetType } from '@codemirror/view';
-import { RangeSetBuilder, type Extension } from '@codemirror/state';
+import { RangeSetBuilder, StateEffect, type Extension } from '@codemirror/state';
 import type { TFile } from 'obsidian';
 import type PageColorPropPlugin from './main';
 
 const WIKILINK_RE = /\[\[([^\]\n]+?)\]\]/g;
 const MDLINK_RE = /\[([^\]\n]+?)\]\(([^)\n]+?)\)/g;
+
+export const forceRecomputeEffect = StateEffect.define<number>();
 
 class LinkColorWidget extends WidgetType {
 	constructor(readonly color: string, readonly ruleIndex: number) {
@@ -59,7 +61,19 @@ export function buildPageColorPropLivePreviewExtension(plugin: PageColorPropPlug
 			this.decorations = this.compute();
 		}
 		update(update: ViewUpdate) {
-			if (update.docChanged || update.viewportChanged || update.selectionSet) {
+			let needsRecompute = update.docChanged || update.viewportChanged || update.selectionSet;
+			if (!needsRecompute) {
+				for (const tr of update.transactions) {
+					for (const e of tr.effects) {
+						if (e.is(forceRecomputeEffect)) {
+							needsRecompute = true;
+							break;
+						}
+					}
+					if (needsRecompute) break;
+				}
+			}
+			if (needsRecompute) {
 				this.decorations = this.compute();
 			}
 		}

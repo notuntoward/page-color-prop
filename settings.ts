@@ -1,4 +1,4 @@
-import { App, Debouncer, debounce, Modal, PluginSettingTab, setIcon, Setting } from 'obsidian';
+import { App, Modal, PluginSettingTab, setIcon, Setting } from 'obsidian';
 import type PageColorPropPlugin from './main';
 import { ColorOptimizer, DEFAULT_LINK_TUNING, type LinkColorTuning } from './color-optimizer';
 
@@ -34,12 +34,10 @@ export const DEFAULT_SETTINGS: PageColorPropSettings = {
 
 export class PageColorPropSettingTab extends PluginSettingTab {
   plugin: PageColorPropPlugin;
-  private debouncedSave: Debouncer<[], Promise<void>>;
 
   constructor(app: App, plugin: PageColorPropPlugin) {
     super(app, plugin);
     this.plugin = plugin;
-    this.debouncedSave = debounce(() => this.plugin.saveSettings(), 500, true);
   }
 
   display(): void {
@@ -134,7 +132,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   }
 
   onunload(): void {
-    this.debouncedSave.run();
+    this.flushSave();
   }
 
   private createEmptyState(containerEl: HTMLElement) {
@@ -177,8 +175,37 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     });
   }
 
+  private saveTimeout: number | null = null;
+  private pendingSave = false;
+
   private queueSave() {
-    this.debouncedSave();
+    if (this.saveTimeout === null) {
+      // First change in a sequence: save immediately so the UI refreshes
+      // right away (e.g., when dragging a color picker).
+      this.pendingSave = false;
+      this.plugin.saveSettings();
+    } else {
+      // Subsequent change: mark that we still need a final trailing save.
+      this.pendingSave = true;
+    }
+
+    window.clearTimeout(this.saveTimeout);
+    this.saveTimeout = window.setTimeout(() => {
+      if (this.pendingSave) {
+        this.plugin.saveSettings();
+      }
+      this.saveTimeout = null;
+      this.pendingSave = false;
+    }, 500);
+  }
+
+  private flushSave() {
+    window.clearTimeout(this.saveTimeout);
+    this.saveTimeout = null;
+    if (this.pendingSave) {
+      this.pendingSave = false;
+      this.plugin.saveSettings();
+    }
   }
 
   private createMappingSettings(containerEl: HTMLElement, mapping: PropertyColorMapping, index: number) {
@@ -426,11 +453,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     const openColorPicker = () => {
       if (!colorPickerInput) return;
-      if ('showPicker' in colorPickerInput) {
-        (colorPickerInput as any).showPicker();
-      } else {
-        (colorPickerInput as any).click();
-      }
+      this.openColorPickerAtElement(colorPickerInput, sampleBox);
     };
 
     addColorPicker(value => {
@@ -438,6 +461,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       setColor(value);
       updateSwatch();
       this.plugin.applyColorsToAllLeaves();
+      this.plugin.refreshLinkDecorations();
       this.queueSave();
     });
 
@@ -641,6 +665,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         setColor(value);
         updatePreview();
         this.plugin.applyColorsToAllLeaves();
+        this.plugin.refreshLinkDecorations();
         this.queueSave();
       });
       const inputs = settingContainer.querySelectorAll('input[type="color"]');
@@ -650,11 +675,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     const openColorPicker = () => {
       if (!colorPickerInput) return;
-      if ('showPicker' in colorPickerInput) {
-        (colorPickerInput as any).showPicker();
-      } else {
-        (colorPickerInput as any).click();
-      }
+      this.openColorPickerAtElement(colorPickerInput, preview);
     };
 
     // Icon-toggle button: shows the ACTION available (per spec section 1).
@@ -861,6 +882,59 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     }
 
     return '#808080';
+  }
+
+  /** Open a hidden color-picker input anchored to a visible element so the
+   *  native browser color picker popup appears near the user's click
+   *  instead of drifting off-screen. The input is restored to its hidden
+   *  state on the next animation frame. */
+  private openColorPickerAtElement(
+    input: HTMLInputElement,
+    anchor: HTMLElement
+  ): void {
+    const rect = anchor.getBoundingClientRect();
+    const prevStyles = {
+      position: input.style.position,
+      left: input.style.left,
+      top: input.style.top,
+      width: input.style.width,
+      height: input.style.height,
+      zIndex: input.style.zIndex,
+      padding: input.style.padding,
+      border: input.style.border,
+      opacity: input.style.opacity,
+      pointerEvents: input.style.pointerEvents
+    };
+
+    input.style.position = 'fixed';
+    input.style.left = `${rect.left}px`;
+    input.style.top = `${rect.top}px`;
+    input.style.width = `${rect.width}px`;
+    input.style.height = `${rect.height}px`;
+    input.style.zIndex = '1';
+    input.style.padding = '0';
+    input.style.border = 'none';
+    input.style.opacity = '0';
+    input.style.pointerEvents = 'auto';
+
+    if ('showPicker' in input) {
+      (input as any).showPicker();
+    } else {
+      (input as any).click();
+    }
+
+    window.requestAnimationFrame(() => {
+      input.style.position = prevStyles.position;
+      input.style.left = prevStyles.left;
+      input.style.top = prevStyles.top;
+      input.style.width = prevStyles.width;
+      input.style.height = prevStyles.height;
+      input.style.zIndex = prevStyles.zIndex;
+      input.style.padding = prevStyles.padding;
+      input.style.border = prevStyles.border;
+      input.style.opacity = prevStyles.opacity;
+      input.style.pointerEvents = prevStyles.pointerEvents;
+    });
   }
 }
 

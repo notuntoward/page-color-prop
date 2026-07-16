@@ -55,6 +55,34 @@ export interface ThemeCssVars {
 }
 
 /**
+ * The seed color used for the link-color optimizer's hue search.
+ *
+ * This is a constant *CSS expression*, not a fixed hex value. When we
+ * pass it to `readThemeCssVar`, the browser resolves the `var(--accent-h)`
+ * and `var(--accent-s)` references against the CURRENT theme's CSS
+ * variables at the moment the call runs. That means:
+ *   * If the user picks a different accent in Obsidian's appearance
+ *     settings, this seed automatically follows.
+ *   * If the user switches light/dark theme, this seed automatically
+ *     follows (each theme defines its own `--accent-h` / `--accent-s`).
+ *   * If a third-party theme overrides `--accent-h` / `--accent-s`, this
+ *     seed automatically follows.
+ *
+ * The shape `hsl(<h>, <s>, 50%)` is deliberate: 50% lightness, full
+ * saturation, no alpha. The rule's resolved *background* is a washed-out
+ * tint by design (e.g. 90% lightness with 0.35 alpha in light mode) —
+ * correct for a background, but a terrible hue source for a link color,
+ * because the optimizer would start its search from a nearly colorless
+ * point (especially in light mode). Seeding from the accent directly
+ * gives the optimizer a strong, stable hue anchor. Background and link
+ * colors still come from the same accent hue family, so the "link feels
+ * related to its target's background" design goal is preserved.
+ * Contrast against the actual background is still enforced by the
+ * optimizer via the `bo` input.
+ */
+export const ACCENT_SEED_COLOR = 'hsl(var(--accent-h), var(--accent-s), 50%)';
+
+/**
  * Reads a CSS variable from `<body>` in the CURRENT theme, returns it as
  * a 6-digit hex string (or null if it can't be resolved). Synchronous;
  * uses a temp probe div as in the settings tab.
@@ -145,9 +173,18 @@ function readWithBodyClass(body: HTMLElement, to: 'Light' | 'Dark') {
 }
 
 /**
- * Computes the auto link color for a mapping in the requested theme,
- * using the rule's *own* background (auto or manual) as the base accent
- * and the surrounding theme colors as constraints.
+ * Computes the auto link color for a mapping in the requested theme.
+ *
+ * The seed hue is derived from the theme's raw accent color at full
+ * strength (50% lightness, no alpha), NOT from the rule's own background.
+ * The background is deliberately a washed-out tint (e.g. 90% lightness
+ * with 0.35 alpha in light mode), which is correct for a background but
+ * dilutes the hue signal so badly that the optimizer's search starts from
+ * a nearly colorless point — especially in light mode. Seeding from the
+ * accent directly gives the optimizer a strong, stable anchor. Background
+ * and link colors still share the same accent hue family, so the design
+ * intent (a link that feels related to its target's background) is
+ * preserved; the background's `bo` is still used as the contrast target.
  *
  * `otherHexes` should contain the hex strings of link colors already
  * assigned to OTHER rules in the same theme, so we don't pick a color
@@ -161,14 +198,7 @@ export function computeAutoLinkHex(
 	tuning: LinkColorTuning = DEFAULT_LINK_TUNING
 ): string {
 	const isLight = theme === 'Light';
-	const baseColor = isLight
-		? (mapping.isAutoLight
-			? 'hsla(var(--accent-h), var(--accent-s), 90%, 0.35)'
-			: mapping.colorLight)
-		: (mapping.isAutoDark
-			? 'hsla(var(--accent-h), var(--accent-s), 25%, 0.30)'
-			: mapping.colorDark);
-	const baseHex = readThemeCssVar(baseColor);
+	const baseHex = readThemeCssVar(ACCENT_SEED_COLOR);
 	if (!baseHex) return '#808080';
 
 	const bo = isLight ? themeVars.bo_l : themeVars.bo_d;

@@ -10,7 +10,7 @@ import {
 import { DEFAULT_LINK_TUNING } from './color-optimizer';
 import { LinkDecorator } from './link-decorator';
 import { findMatchingColorMappings } from './link-color-service';
-import { buildPageColorPropLivePreviewExtension } from './live-preview-links';
+import { buildPageColorPropLivePreviewExtension, forceRecomputeEffect } from './live-preview-links';
 
 type FrontmatterValue = string | number | boolean | null | undefined | FrontmatterValue[];
 type Frontmatter = Record<string, FrontmatterValue>;
@@ -132,7 +132,22 @@ export default class PageColorPropPlugin extends Plugin {
 			this.linkDecorator.invalidateCaches();
 			this.linkDecorator.refreshAllVisible();
 		}
+		this.dispatchLivePreviewRecompute();
 	}
+
+	private linkDecoratorVersion = 0;
+
+	private dispatchLivePreviewRecompute() {
+		const version = ++this.linkDecoratorVersion;
+		for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+			if (!(leaf.view instanceof MarkdownView)) continue;
+			const cmView = (leaf.view.editor as any)?.cm;
+			if (cmView && typeof cmView.dispatch === 'function') {
+				cmView.dispatch({ effects: forceRecomputeEffect.of(version) });
+			}
+		}
+	}
+
 
 	private clearPendingRetries() {
 		this.pendingRetryHandles.forEach(handle => window.clearTimeout(handle));
