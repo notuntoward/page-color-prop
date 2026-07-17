@@ -226,6 +226,10 @@ export class LinkDecorator {
 		explicitLinkName?: string
 	): void {
 		if (!element.instanceOf(HTMLElement)) return;
+		if (!this.plugin.settings.colorLinks) {
+			this.clearDecoration(element);
+			return;
+		}
 		const target = this.resolveTarget(element, sourcePath, explicitLinkName);
 		if (!target) {
 			this.clearDecoration(element);

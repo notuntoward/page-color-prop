@@ -162,6 +162,7 @@ export default class PageColorPropPlugin extends Plugin {
 				colorMappings: loadedData.colorMappings.filter(this.isValidMapping),
 				notifyOnMultipleMatches: loadedData.notifyOnMultipleMatches ?? DEFAULT_SETTINGS.notifyOnMultipleMatches,
 				colorTabText: loadedData.colorTabText ?? DEFAULT_SETTINGS.colorTabText,
+				colorLinks: loadedData.colorLinks ?? DEFAULT_SETTINGS.colorLinks,
 				experimentalLinkTuning: { ...DEFAULT_LINK_TUNING, ...(loadedData.experimentalLinkTuning ?? {}) }
 			};
 		}
@@ -254,6 +255,11 @@ export default class PageColorPropPlugin extends Plugin {
 
 		if (this.settings.colorTabText === undefined) {
 			this.settings.colorTabText = DEFAULT_SETTINGS.colorTabText;
+			needsSave = true;
+		}
+
+		if (this.settings.colorLinks === undefined) {
+			this.settings.colorLinks = DEFAULT_SETTINGS.colorLinks;
 			needsSave = true;
 		}
 

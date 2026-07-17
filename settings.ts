@@ -26,6 +26,7 @@ export interface PageColorPropSettings {
   colorMappings: PropertyColorMapping[];
   notifyOnMultipleMatches: boolean;
   colorTabText: boolean;
+  colorLinks: boolean;
   experimentalLinkTuning: LinkColorTuning;
 }
 
@@ -37,6 +38,7 @@ export const DEFAULT_SETTINGS: PageColorPropSettings = {
   colorMappings: [],
   notifyOnMultipleMatches: true,
   colorTabText: true,
+  colorLinks: true,
   experimentalLinkTuning: { ...DEFAULT_LINK_TUNING }
 };
 
@@ -107,6 +109,18 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.colorTabText)
           .onChange(async value => {
             this.plugin.settings.colorTabText = value;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName('Color links')
+      .setDesc('Tint links pointing to notes matching a rule to use the resolved link color. Toggle off to keep default theme link coloring.')
+      .addToggle(toggle => {
+        toggle
+          .setValue(this.plugin.settings.colorLinks)
+          .onChange(async value => {
+            this.plugin.settings.colorLinks = value;
             await this.plugin.saveSettings();
           });
       });
