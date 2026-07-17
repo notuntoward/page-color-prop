@@ -113,6 +113,15 @@ export class LinkDecorator {
 
 	/** Compute the resolved link color for `mapping` in the current theme. */
 	public getResolvedLinkColor(mapping: PropertyColorMapping): string | null {
+		// The "Color links" setting is the global switch for link tinting.
+		// Honor it here so every caller — the reading-view postprocessor,
+		// the view observers, and the CodeMirror Live Preview extension —
+		// stops coloring links when it is off, not just the ones that go
+		// through decorateLink's own early-return.
+		if (!this.plugin.settings.colorLinks) {
+			return null;
+		}
+
 		const isLight = !this.plugin.isDarkTheme;
 		const isAuto = isLight ? mapping.isAutoLinkLight : mapping.isAutoLinkDark;
 		if (!isAuto) {

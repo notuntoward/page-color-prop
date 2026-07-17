@@ -219,6 +219,7 @@ describe('LinkDecorator', () => {
     plugin.settings = {
       colorMappings: mappings,
       notifyOnMultipleMatches: true,
+      colorLinks: true,
       experimentalLinkTuning: {
         hueStepDegrees: 15,
         minDeltaE: 0.12,

@@ -91,6 +91,7 @@ describe('PageColorPropPlugin', () => {
       colorMappings: [],
       notifyOnMultipleMatches: true,
       colorTabText: true,
+      colorLinks: true,
       experimentalLinkTuning: {
         hueStepDegrees: 15,
         minDeltaE: 0.12,
