@@ -16,7 +16,7 @@
 // Obsidian can use.
 // ============================================================================
 
-import * as paletteMod from './rule-palette';
+import type { PropertyColorMapping } from './settings';
 
 // ---------------------------------------------------------------------------
 // VARIABLE / CONCEPT GLOSSARY (read this first, refer back to it later)
@@ -132,8 +132,11 @@ export const DEFAULT_LINK_TUNING: LinkColorTuning = {
  */
 export interface SingleThemeInputs {
   backgroundHex: string;
+  uiBackgroundHex?: string;
   textHex: string;
   defaultLinkHex: string;
+  navItemHex?: string;
+  textMutedHex?: string;
   isLight: boolean;
 }
 
@@ -342,8 +345,8 @@ export class ColorOptimizer {
     const existingLightLabs = existingLinkHexes.light.map(h => ColorMath.rgbToOklab(ColorMath.hexToRgb(h)));
     const existingDarkLabs = existingLinkHexes.dark.map(h => ColorMath.rgbToOklab(ColorMath.hexToRgb(h)));
 
-    const lc_l = this.findLink(baseLch, bo_lRgb, to_lLab, lo_lLab, existingLightLabs, true, tuning);
-    const lc_d = this.findLink(baseLch, bo_dRgb, to_dLab, lo_dLab, existingDarkLabs, false, tuning);
+    const lc_l = this.findLinkDetailed(baseLch, [bo_lRgb, bc_lRgb], to_lLab, lo_lLab, existingLightLabs, true, tuning).hex;
+    const lc_d = this.findLinkDetailed(baseLch, [bo_dRgb, bc_dRgb], to_dLab, lo_dLab, existingDarkLabs, false, tuning).hex;
 
     return { bc_l, bc_d, lc_l, lc_d };
   }
@@ -352,24 +355,27 @@ export class ColorOptimizer {
    *  searches lightness/chroma near "very light" (light theme) or "very
    *  dark" (dark theme), while staying perceptibly different (ΔE ≥ 0.03)
    *  from the theme's untouched default background. */
-  private static findBackground(baseLch: OKLCh, boLab: OKLab, isLight: boolean): string {
+  public static findBackground(baseLch: OKLCh, boLab: OKLab, isLight: boolean): string {
     const BG_DE = 0.03; // "just noticeable difference" threshold for backgrounds
 
-    const targetL = isLight ? 0.96 : 0.11;
-    const targetC = isLight ? 0.015 : 0.02;
-    const minL = isLight ? 0.90 : 0.05;
-    const maxL = isLight ? 0.99 : 0.15;
+    const targetL = isLight ? 0.96 : boLab.L;
+    const targetC = isLight ? 0.015 : 0.04;
+    const minL = isLight ? 0.90 : Math.max(0.01, boLab.L - 0.05);
+    const maxL = isLight ? 0.99 : Math.min(0.99, boLab.L + 0.05);
 
     let best: OKLCh | null = null;
     let bestLoss = Infinity;
 
+    const maxC = isLight ? 0.05 : 0.07;
     for (let L = minL; L <= maxL; L += 0.005) {
-      for (let C = 0.005; C <= 0.05; C += 0.002) {
+      for (let C = 0.005; C <= maxC; C += 0.002) {
         const candidate = { L, C, h: baseLch.h };
         if (!ColorMath.isSrgbGamut(candidate)) continue;
 
         const candidateLab = ColorMath.oklchToOklab(candidate);
-        if (ColorMath.deltaE(candidateLab, boLab) >= BG_DE) {
+        const candidateRgb = ColorMath.oklabToRgb(candidateLab);
+        const quantizedLab = ColorMath.rgbToOklab(candidateRgb);
+        if (ColorMath.deltaE(quantizedLab, boLab) >= BG_DE) {
           // "Loss" = how far this candidate is from our ideal target.
           // Chroma is weighted 100x more heavily than lightness because
           // small chroma changes matter much more for a subtle background.
@@ -385,119 +391,93 @@ export class ColorOptimizer {
     if (!best) {
       // Fallback: nudge lightness away from the default background instead
       // of failing outright.
-      const fallbackL = isLight ? Math.max(0.90, boLab.L - 0.04) : Math.min(0.15, boLab.L + 0.04);
+      const fallbackL = isLight ? Math.max(0.90, boLab.L - 0.04) : Math.min(0.99, boLab.L + 0.04);
       best = { L: fallbackL, C: targetC, h: baseLch.h };
     }
 
     return ColorMath.rgbToHex(ColorMath.oklabToRgb(ColorMath.oklchToOklab(best)));
   }
 
-  /** Finds a link color that: (1) reads clearly against the theme's
-   *  normal (untinted) background, (2) doesn't look like plain body text,
-   *  (3) doesn't look like the theme's normal link color, and (4) doesn't
-   *  look like any other rule's link color already chosen in this theme.
-   *  Returns the full result (hex, loss, fallback flag) so callers can
-   *  prefer outputs that didn't trigger the fallback. */
   private static findLinkDetailed(
     baseLch: OKLCh,
-    boRgb: RGB,           // theme's default (untouched) background
-    toLab: OKLab,         // theme's default body text color
-    loLab: OKLab,         // theme's default link color
-    existingLinkLabs: OKLab[], // other rules' already-chosen link colors (same theme)
+    backgroundRgbList: RGB[],       // CHANGED: was a single background
+    textLab: OKLab,
+    defaultLinkLab: OKLab,
+    existingLinkLabs: OKLab[],
     isLight: boolean,
-    tuning: LinkColorTuning   // TEMPORARY — remove once finalized, restore as hardcoded constants
+    tuning: LinkColorTuning,
+    navItemLab?: OKLab,
+    textMutedLab?: OKLab,
   ): LinkSearchResult {
-    const targetC = isLight ? 0.20 : 0.18;
-    const targetL = isLight ? 0.40 : 0.75;
-    // NOTE: dark minL is 0.65 (not 0.60). The V2 spec accidentally lowered
-    // this to 0.60, which (a) sits well below the dark target L of 0.75
-    // and (b) was the value originally tuned in V1. We keep 0.65 here.
-    const minL = isLight ? 0.20 : 0.65;
-    const maxL = isLight ? 0.60 : 0.90;
+    const defaultLinkLch = ColorMath.oklabToOklch(defaultLinkLab);
+    const hueDiffToDefault = Math.min(
+      Math.abs(baseLch.h - defaultLinkLch.h),
+      360 - Math.abs(baseLch.h - defaultLinkLch.h)
+    );
+    const skipDefaultLinkCheck = defaultLinkLch.C > 0.04 && hueDiffToDefault < 30;
 
-    let best: OKLCh | null = null;
-    let bestLoss = Infinity;
+    const search = (minTextDeltaE: number): LinkSearchResult | null => {
+      let best: OKLCh | null = null;
+      let bestLoss = Infinity;
 
-    // Search hue offsets outward from the background's own hue: try the
-    // exact hue first (offset 0), then ±15°, ±30°, ... up to ±180°.
-    const hueOffsets = [0];
-    for (let offset = tuning.hueStepDegrees; offset <= 180; offset += tuning.hueStepDegrees) {
-      hueOffsets.push(offset, -offset);
-    }
+      for (let hueStep = -30; hueStep <= 30; hueStep += tuning.hueStepDegrees) {
+        for (const L of candidateLightnesses(isLight)) {
+          for (const C of candidateChromas()) {
+            const candidate: OKLCh = { L, C, h: (baseLch.h + hueStep + 360) % 360 };
+            if (!ColorMath.isSrgbGamut(candidate)) continue;
 
-    for (const offset of hueOffsets) {
-      const h = (baseLch.h + offset + 360) % 360;
+            const candidateLab = ColorMath.oklchToOklab(candidate);
+            const candidateRgb = ColorMath.oklabToRgb(candidateLab);
 
-      for (let L = minL; L <= maxL; L += 0.01) {
-        for (let C = 0.05; C <= 0.25; C += 0.01) {
-          const candidate = { L, C, h };
-          if (!ColorMath.isSrgbGamut(candidate)) continue;
+            const passesAllBackgrounds = backgroundRgbList.every(
+              bg => ColorMath.getContrast(candidateRgb, bg) >= tuning.minContrast,
+            );
+            if (!passesAllBackgrounds) continue;
 
-          const candidateLab = ColorMath.oklchToOklab(candidate);
-          const candidateRgb = ColorMath.oklabToRgb(candidateLab);
+            const quantizedLab = ColorMath.rgbToOklab(candidateRgb);
+            if (ColorMath.deltaE(quantizedLab, textLab) < minTextDeltaE) continue;
+            if (navItemLab && ColorMath.deltaE(quantizedLab, navItemLab) < minTextDeltaE) continue;
+            if (textMutedLab && ColorMath.deltaE(quantizedLab, textMutedLab) < minTextDeltaE) continue;
+            if (!skipDefaultLinkCheck && ColorMath.deltaE(quantizedLab, defaultLinkLab) < tuning.minDeltaE) continue;
+            if (existingLinkLabs.some(o => ColorMath.deltaE(quantizedLab, o) < tuning.minDeltaE)) continue;
 
-          // Must be readable against the theme's normal (untinted)
-          // background.
-          if (ColorMath.getContrast(candidateRgb, boRgb) < tuning.minContrast) continue;
-
-          // Must not be confusable with plain body text.
-          if (ColorMath.deltaE(candidateLab, toLab) < tuning.minDeltaE) continue;
-
-          // Must not be confusable with the theme's normal/default link color.
-          if (ColorMath.deltaE(candidateLab, loLab) < tuning.minDeltaE) continue;
-
-          // [EXTENSION] Must not be confusable with any other rule's link
-          // color already assigned in this same theme.
-          // IMPORTANT: re-derive the candidate's Lab from its rounded RGB
-          // (candidateRgb is the post-8-bit-quantization result). Comparing
-          // the unrounded candidateLab against the (already-rounded) existing
-          // labs lets ~0.002 of ΔE leak through the 8-bit sRGB roundtrip,
-          // which can push the final output just below minDeltaE.
-          const quantizedLab = ColorMath.rgbToOklab(candidateRgb);
-          if (existingLinkLabs.some(other => ColorMath.deltaE(quantizedLab, other) < tuning.minDeltaE)) continue;
-
-          // "Loss" combines three penalties: (a) how far we rotated away
-          // from the background's original hue (weighted highest, since
-          // staying "on-theme" matters most), (b) chroma deviation from
-          // target vividness, (c) lightness deviation from target.
-          const loss = Math.abs(offset) * 1.5 + Math.abs(C - targetC) * 300 + Math.abs(L - targetL) * 100;
-          if (loss < bestLoss) {
-            bestLoss = loss;
-            best = candidate;
+            const loss = computeLoss(candidate, baseLch, hueStep);
+            if (loss < bestLoss) { bestLoss = loss; best = candidate; }
           }
         }
       }
-      // Stop searching wider hue offsets once we already found a good
-      // solution close to the original hue (within 2 search steps).
-      if (best && Math.abs(offset) <= tuning.hueStepDegrees * 2) break;
+
+      if (best) {
+        return {
+          hex: ColorMath.rgbToHex(ColorMath.oklabToRgb(ColorMath.oklchToOklab(best))),
+          loss: bestLoss,
+          fallbackUsed: false,
+        };
+      }
+      return null;
+    };
+
+    if (isLight) {
+      // First try strict text delta E check to keep links highly visible/distinct from normal text.
+      const strictResult = search(0.20);
+      if (strictResult) return strictResult;
+
+      // Relax constraints to standard delta E if the search space was too constrained.
+      const relaxedResult = search(tuning.minDeltaE);
+      if (relaxedResult) return relaxedResult;
+    } else {
+      const darkResult = search(tuning.minDeltaE);
+      if (darkResult) return darkResult;
     }
 
-    if (best) {
-      return {
-        hex: ColorMath.rgbToHex(
-          ColorMath.oklabToRgb(ColorMath.oklchToOklab(best))
-        ),
-        loss: bestLoss,
-        fallbackUsed: false,
-      };
-    }
-
-    // Pathological fallback (should be rare): derive from the background's
-    // own hue rather than a hardcoded color, so the fallback still looks
-    // related to the theme instead of always being the same fixed blue.
     const fallback: OKLCh = { L: isLight ? 0.35 : 0.80, C: 0.15, h: baseLch.h };
     return {
-      hex: ColorMath.rgbToHex(
-        ColorMath.oklabToRgb(ColorMath.oklchToOklab(fallback))
-      ),
+      hex: ColorMath.rgbToHex(ColorMath.oklabToRgb(ColorMath.oklchToOklab(fallback))),
       loss: Infinity,
       fallbackUsed: true,
     };
   }
 
-  /** Thin wrapper that returns only the chosen hex string. Kept for
-   *  callers (and existing tests) that don't care about the loss /
-   *  fallback-flag metadata. */
   private static findLink(
     baseLch: OKLCh,
     boRgb: RGB,
@@ -508,125 +488,93 @@ export class ColorOptimizer {
     tuning: LinkColorTuning
   ): string {
     return this.findLinkDetailed(
-      baseLch, boRgb, toLab, loLab, existingLinkLabs, isLight, tuning
+      baseLch, [boRgb], toLab, loLab, existingLinkLabs, isLight, tuning
     ).hex;
   }
 
-  /**
-   * Computes both background and link colors for one theme variant
-   * (light or dark) given a rule base LCh. The same base is used for
-   * both, so a rule's tint and its incoming link always belong to the
-   * same color family.
-   */
-  public static optimizeOneTheme(
-    baseLch: OKLCh,
+  public static computeRuleColors(
+    mapping: PropertyColorMapping,
+    allMappings: PropertyColorMapping[],
     theme: SingleThemeInputs,
-    existingLinkHexes: string[],
-    tuning: LinkColorTuning
-  ): SingleThemeOutput {
-    const backgroundRgb = ColorMath.hexToRgb(theme.backgroundHex);
+    otherLinkHexes: string[],
+    tuning: LinkColorTuning,
+  ): ResolvedRuleColors {
+    const baseLch = ColorMath.oklabToOklch(ColorMath.rgbToOklab(ColorMath.hexToRgb(mapping.baseColor)));
 
-    const textLab = ColorMath.rgbToOklab(
-      ColorMath.hexToRgb(theme.textHex)
+    const backgroundHex = ColorOptimizer.findBackground(
+      baseLch, ColorMath.rgbToOklab(ColorMath.hexToRgb(theme.backgroundHex)), theme.isLight,
     );
 
-    const defaultLinkLab = ColorMath.rgbToOklab(
-      ColorMath.hexToRgb(theme.defaultLinkHex)
-    );
-
-    const existingLinkLabs = existingLinkHexes.map(hex =>
-      ColorMath.rgbToOklab(ColorMath.hexToRgb(hex))
-    );
-
-    const backgroundHex = this.findBackground(
-      baseLch,
-      ColorMath.rgbToOklab(backgroundRgb),
-      theme.isLight
-    );
-
-    const link = this.findLinkDetailed(
-      baseLch,
-      backgroundRgb,
-      textLab,
-      defaultLinkLab,
-      existingLinkLabs,
-      theme.isLight,
-      tuning
-    );
-
-    return {
-      backgroundHex,
-      linkHex: link.hex,
-      loss: link.loss,
-      fallbackUsed: link.fallbackUsed,
-    };
-  }
-
-  /**
-   * Picks the rule's best base hue (and therefore the rule's
-   * background + link pair) by trying the rule's preferred palette
-   * offset first, then the rest of the curated palette, then a set of
-   * small fallback offsets. Results that did NOT trigger the
-   * pathological fallback are preferred; among those, the lowest
-   * total loss wins. If every attempt fell back, the offset closest
-   * to the rule's preferred palette identity is returned.
-   *
-   * The hard contrast / Delta E / gamut checks all live inside
-   * `findLinkDetailed` and `findBackground`; this method only changes
-   * WHICH starting color family the optimizer searches.
-   */
-  public static optimizeRuleFromAccent(
-    accentHex: string,
-    ruleId: string,
-    allRuleIds: string[],
-    theme: SingleThemeInputs,
-    existingLinkHexes: string[],
-    tuning: LinkColorTuning
-  ): SingleThemeOutput {
-    const accentLab = ColorMath.rgbToOklab(
-      ColorMath.hexToRgb(accentHex)
-    );
-    const accentLch = ColorMath.oklabToOklch(accentLab);
-
-    const assignments = paletteMod.assignRuleHueOffsets(allRuleIds);
-    const preferredOffset = assignments.get(ruleId) ?? 60;
-
-    let bestFeasible: SingleThemeOutput | null = null;
-    let bestFeasibleLoss = Infinity;
-
-    let bestFallback: SingleThemeOutput | null = null;
-    let bestFallbackPenalty = Infinity;
-
-    for (const offset of paletteMod.orderedRuleHueOffsets(preferredOffset)) {
-      const baseLch = paletteMod.deriveBaseLch(accentLch, offset);
-
-      const result = this.optimizeOneTheme(
-        baseLch,
-        theme,
-        existingLinkHexes,
-        tuning
-      );
-
-      const palettePenalty = Math.abs(offset - preferredOffset) * 0.25;
-      const totalLoss = result.loss + palettePenalty;
-
-      if (!result.fallbackUsed) {
-        if (totalLoss < bestFeasibleLoss) {
-          bestFeasible = result;
-          bestFeasibleLoss = totalLoss;
-        }
-        continue;
-      }
-
-      if (palettePenalty < bestFallbackPenalty) {
-        bestFallback = result;
-        bestFallbackPenalty = palettePenalty;
-      }
+    const allBackgrounds = collectAllRuleBackgrounds(allMappings, theme.backgroundHex, theme.isLight);
+    if (theme.uiBackgroundHex) {
+      allBackgrounds.push(ColorMath.hexToRgb(theme.uiBackgroundHex));
     }
 
-    if (bestFeasible) return bestFeasible;
-    if (bestFallback) return bestFallback;
+    const navItemLab = theme.navItemHex ? ColorMath.rgbToOklab(ColorMath.hexToRgb(theme.navItemHex)) : undefined;
+    const textMutedLab = theme.textMutedHex ? ColorMath.rgbToOklab(ColorMath.hexToRgb(theme.textMutedHex)) : undefined;
 
-    throw new Error('Rule palette optimizer returned no result');
+    const link = ColorOptimizer.findLinkDetailed(
+      baseLch,
+      allBackgrounds,
+      ColorMath.rgbToOklab(ColorMath.hexToRgb(theme.textHex)),
+      ColorMath.rgbToOklab(ColorMath.hexToRgb(theme.defaultLinkHex)),
+      otherLinkHexes.map(h => ColorMath.rgbToOklab(ColorMath.hexToRgb(h))),
+      theme.isLight,
+      tuning,
+      navItemLab,
+      textMutedLab,
+    );
+
+    return { backgroundHex, linkHex: link.hex, fallbackUsed: link.fallbackUsed };
   }
+}
+
+export function collectAllRuleBackgrounds(
+  mappings: PropertyColorMapping[],
+  plainBackgroundHex: string,
+  isLight: boolean,
+): RGB[] {
+  const plainBg = ColorMath.hexToRgb(plainBackgroundHex);
+  const backgrounds: RGB[] = [plainBg];
+
+  for (const mapping of mappings) {
+    if (!mapping.baseColor) continue;
+    const baseLch = ColorMath.oklabToOklch(ColorMath.rgbToOklab(ColorMath.hexToRgb(mapping.baseColor)));
+    const bgHex = ColorOptimizer.findBackground(baseLch, ColorMath.rgbToOklab(plainBg), isLight);
+    backgrounds.push(ColorMath.hexToRgb(bgHex));
+  }
+
+  return backgrounds;
+}
+
+export interface ResolvedRuleColors {
+  backgroundHex: string;
+  linkHex: string;
+  fallbackUsed: boolean;
+}
+
+function candidateLightnesses(isLight: boolean): number[] {
+  const minL = isLight ? 0.20 : 0.65;
+  const maxL = isLight ? 0.60 : 0.90;
+  const result: number[] = [];
+  for (let L = minL; L <= maxL + 0.0001; L += 0.01) {
+    result.push(L);
+  }
+  return result;
+}
+
+function candidateChromas(): number[] {
+  const result: number[] = [];
+  for (let C = 0.05; C <= 0.25 + 0.0001; C += 0.01) {
+    result.push(C);
+  }
+  return result;
+}
+
+function computeLoss(candidate: OKLCh, baseLch: OKLCh, hueStep: number): number {
+  const isLight = candidate.L <= 0.60;
+  const targetC = isLight ? 0.20 : 0.18;
+  const targetL = isLight ? 0.40 : 0.75;
+  const shortestHueDiff = Math.min(hueStep, 360 - hueStep);
+  return shortestHueDiff * 1.5 + Math.abs(candidate.C - targetC) * 300 + Math.abs(candidate.L - targetL) * 100;
 }

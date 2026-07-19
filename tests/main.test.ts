@@ -7,6 +7,7 @@ import { MarkdownView, mockedNotice } from './obsidian.mock';
 function mapping(overrides: Partial<PropertyColorMapping> = {}): PropertyColorMapping {
   return {
     id: 'test-rule-a',
+    baseColor: '#4f8cc9',
     property: 'tags',
     value: 'ai-generated',
     colorLight: '#4e66d0',
@@ -27,7 +28,7 @@ function createPlugin(overrides: Partial<PageColorPropSettings> = {}) {
   plugin.settings = {
     colorMappings: overrides.colorMappings ?? [mapping()],
     notifyOnMultipleMatches: overrides.notifyOnMultipleMatches ?? true,
-    colorTabText: true
+    colorUiLabels: true
   };
   plugin.isDarkTheme = false;
   plugin.multipleMatchNoticeKeys = new Set<string>();
@@ -90,7 +91,7 @@ describe('PageColorPropPlugin', () => {
     expect(plugin.settings).toEqual({
       colorMappings: [],
       notifyOnMultipleMatches: true,
-      colorTabText: true,
+      colorUiLabels: true,
       colorLinks: true,
       experimentalLinkTuning: {
         hueStepDegrees: 15,
@@ -367,7 +368,7 @@ describe('PageColorPropPlugin', () => {
         mapping({ colorLight: '#4e66d0', isAutoLight: false })
       ]
     });
-    plugin.settings.colorTabText = false;
+    plugin.settings.colorUiLabels = false;
     plugin.linkDecorator = {
       getResolvedLinkColor: vi.fn(() => '#1a5fb4')
     } as any;
@@ -394,7 +395,7 @@ describe('PageColorPropPlugin', () => {
         mapping({ colorLight: '#4e66d0', isAutoLight: false })
       ]
     });
-    plugin.settings.colorTabText = false;
+    plugin.settings.colorUiLabels = false;
     plugin.linkDecorator = {
       getResolvedLinkColor: vi.fn(() => '#1a5fb4')
     } as any;

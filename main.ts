@@ -3,7 +3,8 @@ import {
 	PageColorPropSettings,
 	DEFAULT_SETTINGS,
 	PageColorPropSettingTab,
-	PropertyColorMapping
+	PropertyColorMapping,
+	DEFAULT_RULE_BASE_COLOR
 } from './settings';
 import { DEFAULT_LINK_TUNING } from './color-optimizer';
 import { LinkDecorator } from './link-decorator';
@@ -117,7 +118,8 @@ export default class PageColorPropPlugin extends Plugin {
 					this.linkDecorator!.observeContainer(
 						node,
 						'',
-						'.tree-item-inner, .nav-file-title-content, .metadata-link-inner, .multi-select-pill-content'
+						'.tree-item-inner, .nav-file-title-content, .metadata-link-inner, .multi-select-pill-content',
+						true
 					);
 				}
 			});
@@ -161,9 +163,9 @@ export default class PageColorPropPlugin extends Plugin {
 			this.settings = {
 				colorMappings: loadedData.colorMappings.filter(this.isValidMapping),
 				notifyOnMultipleMatches: loadedData.notifyOnMultipleMatches ?? DEFAULT_SETTINGS.notifyOnMultipleMatches,
-				colorTabText: loadedData.colorTabText ?? DEFAULT_SETTINGS.colorTabText,
+				colorUiLabels: loadedData.colorUiLabels ?? (loadedData as any).colorTabText ?? DEFAULT_SETTINGS.colorUiLabels,
 				colorLinks: loadedData.colorLinks ?? DEFAULT_SETTINGS.colorLinks,
-				experimentalLinkTuning: { ...DEFAULT_LINK_TUNING, ...(loadedData.experimentalLinkTuning ?? {}) }
+				experimentalLinkTuning: { ...DEFAULT_LINK_TUNING }
 			};
 		}
 
@@ -184,6 +186,11 @@ export default class PageColorPropPlugin extends Plugin {
 		let needsSave = false;
 
 		this.settings.colorMappings.forEach((mapping: LegacyPropertyColorMapping) => {
+			if (!mapping.baseColor) {
+				mapping.baseColor = DEFAULT_RULE_BASE_COLOR;
+				needsSave = true;
+			}
+
 			// If old format exists (has 'color' but not 'colorLight' or 'colorDark')
 			if (mapping.color && (!mapping.colorLight || !mapping.colorDark)) {
 				mapping.colorLight = mapping.color;
@@ -253,8 +260,8 @@ export default class PageColorPropPlugin extends Plugin {
 			needsSave = true;
 		}
 
-		if (this.settings.colorTabText === undefined) {
-			this.settings.colorTabText = DEFAULT_SETTINGS.colorTabText;
+		if (this.settings.colorUiLabels === undefined) {
+			this.settings.colorUiLabels = DEFAULT_SETTINGS.colorUiLabels;
 			needsSave = true;
 		}
 
@@ -545,7 +552,7 @@ export default class PageColorPropPlugin extends Plugin {
 	}
 
 	private applyTabColorToLeaf(leaf: WorkspaceLeaf, mapping: PropertyColorMapping) {
-		if (!this.settings.colorTabText || !this.linkDecorator) {
+		if (!this.settings.colorUiLabels || !this.linkDecorator) {
 			// Setting is off or decorator unavailable: actively remove any existing
 			// tab color rather than leaving stale styling in place. This mirrors how
 			// removeBackgroundColorFromLeaf works — when a color shouldn't be applied,
@@ -558,7 +565,7 @@ export default class PageColorPropPlugin extends Plugin {
 			const tabEl = this.getLeafTabEl(leaf);
 			if (!tabEl) return;
 
-			const color = this.linkDecorator.getResolvedLinkColor(mapping);
+			const color = this.linkDecorator.getResolvedLinkColor(mapping, true);
 			if (!color) {
 				this.removeTabColorFromLeaf(leaf);
 				return;

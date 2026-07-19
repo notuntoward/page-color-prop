@@ -1,10 +1,11 @@
 import { App, Modal, PluginSettingTab, setIcon, Setting } from 'obsidian';
 import type PageColorPropPlugin from './main';
-import { DEFAULT_LINK_TUNING, type LinkColorTuning } from './color-optimizer';
-import { computeAutoRuleColors, readBothThemeVars, readThemeCssVar } from './link-color-service';
+import { DEFAULT_LINK_TUNING, ColorMath, type LinkColorTuning } from './color-optimizer';
+import { computeAutoRuleColors, readBothThemeVars, readThemeCssVar, type ThemeCssVars } from './link-color-service';
 
 export interface PropertyColorMapping {
   id: string;
+  baseColor: string; // NEW — "#RRGGBB", replaces accent-derived hue-rotation logic
   property: string;
   value: string;
   colorLight: string;
@@ -18,6 +19,8 @@ export interface PropertyColorMapping {
   isAutoLinkDark: boolean;
 }
 
+export const DEFAULT_RULE_BASE_COLOR = '#4f8cc9';
+
 export function newRuleId(): string {
   return crypto.randomUUID();
 }
@@ -25,7 +28,7 @@ export function newRuleId(): string {
 export interface PageColorPropSettings {
   colorMappings: PropertyColorMapping[];
   notifyOnMultipleMatches: boolean;
-  colorTabText: boolean;
+  colorUiLabels: boolean;
   colorLinks: boolean;
   experimentalLinkTuning: LinkColorTuning;
 }
@@ -37,7 +40,7 @@ export const DEFAULT_DARK_AUTO_COLOR = 'hsla(var(--accent-h), var(--accent-s), 2
 export const DEFAULT_SETTINGS: PageColorPropSettings = {
   colorMappings: [],
   notifyOnMultipleMatches: true,
-  colorTabText: true,
+  colorUiLabels: true,
   colorLinks: true,
   experimentalLinkTuning: { ...DEFAULT_LINK_TUNING }
 };
@@ -69,6 +72,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           .onClick(async () => {
             this.plugin.settings.colorMappings.push({
               id: newRuleId(),
+              baseColor: DEFAULT_RULE_BASE_COLOR,
               property: '',
               value: '',
               colorLight: DEFAULT_LIGHT_AUTO_COLOR,
@@ -87,7 +91,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       });
 
     // TEMPORARY — remove once algorithm parameters are finalized
-    this.createExperimentalTuningSection(containerEl);
+    // this.createExperimentalTuningSection(containerEl);
 
     new Setting(containerEl)
       .setName('Notify when multiple rules match')
@@ -102,26 +106,32 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName('Color tab text')
-      .setDesc('Tint the text of a note’s tab to match its rule’s link color. Toggle off to keep tabs using the default theme text color.')
+      .setName('Color UI labels')
+      .setDesc('Color and bold note titles/names in tabs, file explorer/navigator, completions, and other UI elements. Toggle off to keep standard theme UI styling.')
       .addToggle(toggle => {
         toggle
-          .setValue(this.plugin.settings.colorTabText)
+          .setValue(this.plugin.settings.colorUiLabels)
           .onChange(async value => {
-            this.plugin.settings.colorTabText = value;
+            this.plugin.settings.colorUiLabels = value;
             await this.plugin.saveSettings();
+            this.plugin.applyColorsToAllLeaves();
+            this.plugin.refreshLinkDecorations();
+            this.display();
           });
       });
 
     new Setting(containerEl)
       .setName('Color links')
-      .setDesc('Tint links pointing to notes matching a rule to use the resolved link color. Toggle off to keep default theme link coloring.')
+      .setDesc('Tint links inside the note body pointing to notes matching a rule. Toggle off to keep default theme link coloring.')
       .addToggle(toggle => {
         toggle
           .setValue(this.plugin.settings.colorLinks)
           .onChange(async value => {
             this.plugin.settings.colorLinks = value;
             await this.plugin.saveSettings();
+            this.plugin.applyColorsToAllLeaves();
+            this.plugin.refreshLinkDecorations();
+            this.display();
           });
       });
 
@@ -297,6 +307,8 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           });
       });
 
+    this.createBaseColorSetting(mappingCard, mapping);
+
     // Table replaces the two separate light/dark theme-group blocks.
     // Row label appears once per theme; column header appears once per role
     // — this removes the previously duplicated "Color for light/dark-mode..."
@@ -306,6 +318,17 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     this.createThemeTableRow(tbody, mapping, 'Light');
     this.createThemeTableRow(tbody, mapping, 'Dark');
+
+    const themeVars = readBothThemeVars();
+    if (themeVars) {
+      this.renderCrossRuleCheck(
+        mappingCard,
+        mapping,
+        this.plugin.settings.colorMappings,
+        themeVars,
+        this.plugin.settings.experimentalLinkTuning ?? DEFAULT_LINK_TUNING
+      );
+    }
 
     const footer = mappingCard.createDiv('page-color-prop-mapping-footer');
 
@@ -390,21 +413,27 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   private createRuleColorTable(mappingCard: HTMLElement, mapping: PropertyColorMapping): HTMLTableElement {
     const table = mappingCard.createEl('table', { cls: 'page-color-prop-rule-table' });
 
-    // Explicit column widths: prevents the browser from auto-sizing columns
-    // based on cell content, which was causing the Link column (wide preview
-    // box) to have uneven left/right spacing compared to the Background
-    // column (small swatch). Percentages are relative to the table's own
-    // width, which is already set to 100% of the card.
+    const showUiColumn = this.plugin.settings.colorUiLabels;
     const colgroup = table.createEl('colgroup');
-    colgroup.createEl('col', { attr: { style: 'width: 15%;' } });
-    colgroup.createEl('col', { attr: { style: 'width: 25%;' } });
-    colgroup.createEl('col', { attr: { style: 'width: 60%;' } });
+    if (showUiColumn) {
+      colgroup.createEl('col', { attr: { style: 'width: 15%;' } });
+      colgroup.createEl('col', { attr: { style: 'width: 25%;' } });
+      colgroup.createEl('col', { attr: { style: 'width: 30%;' } });
+      colgroup.createEl('col', { attr: { style: 'width: 30%;' } });
+    } else {
+      colgroup.createEl('col', { attr: { style: 'width: 15%;' } });
+      colgroup.createEl('col', { attr: { style: 'width: 25%;' } });
+      colgroup.createEl('col', { attr: { style: 'width: 60%;' } });
+    }
 
     const thead = table.createEl('thead');
     const headerRow = thead.createEl('tr');
     headerRow.createEl('th', { text: 'Theme' });
     headerRow.createEl('th', { text: 'Background' });
     headerRow.createEl('th', { text: 'Link' });
+    if (showUiColumn) {
+      headerRow.createEl('th', { text: 'UI' });
+    }
 
     return table;
   }
@@ -417,8 +446,25 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     const bgCell = row.createEl('td');
     this.createThemeColorSetting(bgCell, '', '', mapping, themeType, true);
 
+    let updateLinkPreview: (() => void) | null = null;
+    let updateUiPreview: (() => void) | null = null;
+
     const linkCell = row.createEl('td');
-    this.createThemeLinkColorSetting(linkCell, '', '', mapping, themeType, true);
+    this.createThemeLinkColorSetting(linkCell, '', '', mapping, themeType, true, () => {
+      if (updateUiPreview) updateUiPreview();
+    }, (updater) => {
+      updateLinkPreview = updater;
+    });
+
+    const showUiColumn = this.plugin.settings.colorUiLabels;
+    if (showUiColumn) {
+      const uiCell = row.createEl('td');
+      this.createThemeUiLinkColorSetting(uiCell, '', '', mapping, themeType, true, () => {
+        if (updateLinkPreview) updateLinkPreview();
+      }, (updater) => {
+        updateUiPreview = updater;
+      });
+    }
   }
 
   private createThemeColorSetting(
@@ -640,7 +686,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     desc: string,
     mapping: PropertyColorMapping,
     themeType: 'Light' | 'Dark',
-    compact = false
+    compact = false,
+    onChanged?: () => void,
+    registerUpdater?: (updater: () => void) => void
   ) {
     const isLight = themeType === 'Light';
 
@@ -712,6 +760,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         setIsAuto(false);
         setColor(value);
         updatePreview();
+        onChanged?.();
         this.plugin.applyColorsToAllLeaves();
         this.plugin.refreshLinkDecorations();
         this.queueSave();
@@ -744,13 +793,12 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         }
         await this.plugin.saveSettings();
         updatePreview();
+        onChanged?.();
         button.setIcon(nowAuto ? 'pipette' : 'sparkles');
         button.setTooltip(nowAuto ? 'Switch to manual color' : 'Switch to auto color');
         if (!nowAuto) openColorPicker();
       });
     });
-
-    const toggleBtn = toggleBtnComponent?.buttonEl as HTMLButtonElement | undefined;
 
     // Live preview swatch — renders on THIS theme's default (untouched)
     // page background with three stacked text samples: body text, default
@@ -779,6 +827,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       ruleLinkEl.style.color = displayed;
       preview.title = `${mode}: ${displayed}`;
       preview.ariaLabel = `${mode} link color: ${displayed}`;
+      if (colorPickerInput) {
+        colorPickerInput.value = this.resolveColorForPicker(displayed);
+      }
     };
     updatePreview();
 
@@ -795,9 +846,269 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       }
       this.queueSave();
       updatePreview();
+      onChanged?.();
       openColorPicker();
     });
+
+    if (registerUpdater) {
+      registerUpdater(() => {
+        updatePreview();
+        if (toggleBtnComponent) {
+          toggleBtnComponent.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
+          toggleBtnComponent.setTooltip(getIsAuto() ? 'Switch to manual color' : 'Switch to auto color');
+        }
+      });
+    }
   }
+
+  private createThemeUiLinkColorSetting(
+    containerEl: HTMLElement,
+    name: string,
+    desc: string,
+    mapping: PropertyColorMapping,
+    themeType: 'Light' | 'Dark',
+    compact = false,
+    onChanged?: () => void,
+    registerUpdater?: (updater: () => void) => void
+  ) {
+    const isLight = themeType === 'Light';
+
+    const getIsAuto = () => isLight ? mapping.isAutoLinkLight : mapping.isAutoLinkDark;
+    const getColor = () => isLight ? mapping.linkColorLight : mapping.linkColorDark;
+    const setIsAuto = (value: boolean) => {
+      if (isLight) mapping.isAutoLinkLight = value;
+      else mapping.isAutoLinkDark = value;
+    };
+    const setColor = (value: string) => {
+      if (isLight) mapping.linkColorLight = value;
+      else mapping.linkColorDark = value;
+    };
+
+    const computeAutoColors = (): { backgroundHex: string; linkHex: string } => {
+      const themeVars = readBothThemeVars();
+      if (!themeVars) return { backgroundHex: '#808080', linkHex: '#808080' };
+
+      const tuning = this.plugin.settings.experimentalLinkTuning ?? { ...DEFAULT_LINK_TUNING };
+
+      const otherHexes = this.plugin.settings.colorMappings
+        .filter(m => m !== mapping)
+        .filter(m => !(isLight ? m.isAutoLinkLight : m.isAutoLinkDark))
+        .map(m => isLight ? m.linkColorLight : m.linkColorDark)
+        .filter((h): h is string => !!h);
+
+      try {
+        return computeAutoRuleColors(
+          mapping,
+          this.plugin.settings.colorMappings,
+          themeType,
+          themeVars,
+          otherHexes,
+          tuning
+        );
+      } catch (e) {
+        console.error('Page Color Prop: failed to compute auto UI link color preview', e);
+        return { backgroundHex: '#808080', linkHex: '#808080' };
+      }
+    };
+
+    const settingContainer = containerEl.createDiv('page-color-prop-color-setting-container page-color-prop-link-setting');
+    const settingEl = new Setting(settingContainer);
+    if (!compact) {
+      settingEl.setName(name);
+      settingEl.setDesc(desc);
+    }
+
+    let colorPickerInput: HTMLInputElement | null = null;
+    settingEl.addColorPicker(colorPicker => {
+      const initial = this.resolveColorForPicker(getColor() || computeAutoColors().linkHex);
+      colorPicker.setValue(initial).onChange(value => {
+        setIsAuto(false);
+        setColor(value);
+        updatePreview();
+        onChanged?.();
+        this.plugin.applyColorsToAllLeaves();
+        this.plugin.refreshLinkDecorations();
+        this.queueSave();
+      });
+      const inputs = settingContainer.querySelectorAll('input[type="color"]');
+      colorPickerInput = inputs[inputs.length - 1] as HTMLInputElement | null;
+      colorPickerInput?.addClass('page-color-prop-hidden-color-picker');
+    });
+
+    const openColorPicker = () => {
+      if (!colorPickerInput) return;
+      this.openColorPickerAtElement(colorPickerInput, preview);
+    };
+
+    let toggleBtnComponent: any = null;
+    settingEl.addButton(button => {
+      toggleBtnComponent = button;
+      button.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
+      button.setTooltip(getIsAuto() ? 'Switch to manual color' : 'Switch to auto color');
+      button.onClick(async () => {
+        const nowAuto = !getIsAuto();
+        setIsAuto(nowAuto);
+        if (nowAuto) {
+          setColor(computeAutoColors().linkHex);
+        } else if (colorPickerInput) {
+          setColor(colorPickerInput.value);
+        }
+        await this.plugin.saveSettings();
+        updatePreview();
+        onChanged?.();
+        button.setIcon(nowAuto ? 'pipette' : 'sparkles');
+        button.setTooltip(nowAuto ? 'Switch to manual color' : 'Switch to auto color');
+        if (!nowAuto) openColorPicker();
+      });
+    });
+
+    const themeName: 'Light' | 'Dark' = isLight ? 'Light' : 'Dark';
+    const preview = settingEl.controlEl.createDiv('page-color-prop-link-preview');
+    const defaultBg = this.computeColorFromThemeVarsForTheme('var(--background-secondary)', themeName);
+    const defaultText = this.computeColorFromThemeVarsForTheme('var(--nav-item-color)', themeName);
+    const defaultMutedText = this.computeColorFromThemeVarsForTheme('var(--text-muted)', themeName);
+    preview.style.backgroundColor = defaultBg || '';
+    preview.style.color = defaultText || '';
+
+    const sampleText = preview.createDiv('page-color-prop-link-preview-sample');
+    sampleText.setText('Sample UI text');
+    sampleText.style.fontWeight = '600';
+
+    const defaultMutedEl = preview.createDiv('page-color-prop-link-preview-sample');
+    defaultMutedEl.setText('Muted UI text');
+    defaultMutedEl.style.color = defaultMutedText || '';
+
+    const ruleLinkEl = preview.createDiv('page-color-prop-link-preview-sample page-color-prop-link-preview-rule');
+    ruleLinkEl.setText('Rule link');
+    ruleLinkEl.style.fontWeight = '600';
+
+    const updatePreview = () => {
+      const mode = getIsAuto() ? 'Auto (computed from background hue)' : 'Manual';
+      const displayed = getIsAuto() ? computeAutoColors().linkHex : (getColor() || computeAutoColors().linkHex);
+      ruleLinkEl.style.color = displayed;
+      preview.title = `${mode}: ${displayed}`;
+      preview.ariaLabel = `${mode} link color: ${displayed}`;
+      if (colorPickerInput) {
+        colorPickerInput.value = this.resolveColorForPicker(displayed);
+      }
+    };
+    updatePreview();
+
+    preview.onClickEvent(() => {
+      if (getIsAuto()) {
+        setIsAuto(false);
+        if (colorPickerInput) setColor(colorPickerInput.value);
+        if (toggleBtnComponent) {
+          toggleBtnComponent.setIcon('sparkles');
+          toggleBtnComponent.setTooltip('Switch to auto color');
+        }
+      }
+      this.queueSave();
+      updatePreview();
+      onChanged?.();
+      openColorPicker();
+    });
+
+    if (registerUpdater) {
+      registerUpdater(() => {
+        updatePreview();
+        if (toggleBtnComponent) {
+          toggleBtnComponent.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
+          toggleBtnComponent.setTooltip(getIsAuto() ? 'Switch to manual color' : 'Switch to auto color');
+        }
+      });
+    }
+  }
+
+  private createBaseColorSetting(containerEl: HTMLElement, mapping: PropertyColorMapping): void {
+    const group = containerEl.createDiv("page-color-prop-base-color-group");
+
+    group.createEl("div", { text: "Rule base color", cls: "page-color-prop-base-color-label" });
+
+    const swatchRow = group.createDiv("page-color-prop-swatch-group");
+    const swatch = swatchRow.createEl("button", { cls: "page-color-prop-base-swatch", type: "button" });
+    swatch.style.backgroundColor = mapping.baseColor;
+    swatch.setAttr("aria-label", `Rule base color ${mapping.baseColor}`);
+
+    let colorInput: HTMLInputElement | null = null;
+    const setting = new Setting(swatchRow);
+
+    setting.addColorPicker(picker => {
+      picker.setValue(mapping.baseColor).onChange(async value => {
+        mapping.baseColor = value;
+        swatch.style.backgroundColor = value;
+        await this.plugin.saveSettings();
+        this.plugin.applyColorsToAllLeaves();
+        this.plugin.refreshLinkDecorations();
+        this.display();
+      });
+      const inputs = swatchRow.querySelectorAll("input[type=color]");
+      colorInput = inputs[inputs.length - 1] as HTMLInputElement;
+      colorInput?.addClass("page-color-prop-hidden-color-picker");
+    });
+
+    setting.addButton(button => {
+      button.setButtonText("Pick").onClick(() => {
+        if (colorInput) this.openColorPickerAtElement(colorInput, swatch);
+      });
+    });
+
+    group.createEl("p", {
+      cls: "page-color-prop-base-color-helper",
+      text: "Choose the rule's base color. Page tints and links adapt automatically for each theme.",
+    });
+  }
+
+  private renderCrossRuleCheck(
+    containerEl: HTMLElement,
+    mapping: PropertyColorMapping,
+    allMappings: PropertyColorMapping[],
+    themeVars: ThemeCssVars,
+    tuning: LinkColorTuning,
+  ): void {
+    const others = allMappings.filter(m => m.id !== mapping.id);
+    if (others.length === 0) return;
+
+    const details = containerEl.createEl("details", { cls: "page-color-prop-cross-check" });
+    details.createEl("summary", { text: "Check against other rules" });
+    details.createEl("p", {
+      cls: "page-color-prop-cross-check-caption",
+      text: "Verifies this rule's link color stays readable on other rules' backgrounds (since matching pages can link to each other).",
+    });
+
+    const isLight = !this.plugin.isDarkTheme;
+    const theme = isLight ? "Light" : "Dark";
+    const thisResult = computeAutoRuleColors(mapping, allMappings, theme, themeVars, [], tuning);
+
+    let anyFailed = false;
+
+    for (const other of others) {
+      const otherResult = computeAutoRuleColors(other, allMappings, theme, themeVars, [], tuning);
+      const contrast = ColorMath.getContrast(
+        ColorMath.hexToRgb(thisResult.linkHex),
+        ColorMath.hexToRgb(otherResult.backgroundHex),
+      );
+      const passed = contrast >= tuning.minContrast;
+      if (!passed) anyFailed = true;
+
+      const row = details.createDiv("page-color-prop-cross-check-row");
+      const preview = row.createDiv("page-color-prop-cross-check-preview");
+      preview.style.backgroundColor = otherResult.backgroundHex;
+      const sample = preview.createSpan({ text: "Rule link" });
+      sample.style.color = thisResult.linkHex;
+
+      row.createSpan({ text: `${other.property || "Unnamed rule"} background` });
+      row.createSpan({
+        cls: passed ? "page-color-prop-badge-pass" : "page-color-prop-badge-fail",
+        text: passed
+          ? `Pass (${contrast.toFixed(1)}:1)`
+          : `Low contrast (${contrast.toFixed(1)}:1, needs ${tuning.minContrast}:1)`,
+      });
+    }
+
+    details.open = anyFailed;
+  }
+
 
   /** Resolves any color string (hex, rgb, or var(--...)) to a 6-digit hex
    *  suitable for the native <input type="color"> element, which requires

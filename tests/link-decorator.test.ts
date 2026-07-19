@@ -16,6 +16,7 @@ class MinimalPlugin {
 function mapping(overrides: Partial<PropertyColorMapping> = {}): PropertyColorMapping {
   return {
     id: 'test-rule-a',
+    baseColor: '#4f8cc9',
     property: 'tags',
     value: 'ai-generated',
     colorLight: '#4e66d0',
@@ -126,8 +127,11 @@ describe('computeAutoLinkHex', () => {
   it('produces a hex color (light and dark)', () => {
     const themeVars = {
       bo_l: '#ffffff', bo_d: '#1e1e1e',
+      ui_l: '#ffffff', ui_d: '#1e1e1e',
       to_l: '#2e2e2e', to_d: '#dbdbdb',
-      lo_l: '#2463d1', lo_d: '#58a6ff'
+      lo_l: '#2463d1', lo_d: '#58a6ff',
+      nv_l: '#2e2e2e', nv_d: '#dbdbdb',
+      mt_l: '#2e2e2e', mt_d: '#dbdbdb'
     };
     const m = mapping();
     const light = computeAutoLinkHex(m, 'Light', themeVars, []);
@@ -139,8 +143,11 @@ describe('computeAutoLinkHex', () => {
   it('passes the tuning object through to the optimizer', () => {
     const themeVars = {
       bo_l: '#ffffff', bo_d: '#1e1e1e',
+      ui_l: '#ffffff', ui_d: '#1e1e1e',
       to_l: '#2e2e2e', to_d: '#dbdbdb',
-      lo_l: '#2463d1', lo_d: '#58a6ff'
+      lo_l: '#2463d1', lo_d: '#58a6ff',
+      nv_l: '#2e2e2e', nv_d: '#dbdbdb',
+      mt_l: '#2e2e2e', mt_d: '#dbdbdb'
     };
     const m = mapping();
     // A wildly restrictive tuning (require the link to be perceptually
@@ -164,8 +171,11 @@ describe('computeAutoLinkHex', () => {
     // therefore allowed to produce distinct link colors.
     const themeVars = {
       bo_l: '#ffffff', bo_d: '#1e1e1e',
+      ui_l: '#ffffff', ui_d: '#1e1e1e',
       to_l: '#2e2e2e', to_d: '#dbdbdb',
-      lo_l: '#2463d1', lo_d: '#58a6ff'
+      lo_l: '#2463d1', lo_d: '#58a6ff',
+      nv_l: '#2e2e2e', nv_d: '#dbdbdb',
+      mt_l: '#2e2e2e', mt_d: '#dbdbdb'
     };
     const ruleA = mapping({
       id: 'test-rule-a',
@@ -202,8 +212,11 @@ describe('computeAutoLinkHex', () => {
     // the optimizer still runs and returns a valid hex for both themes.
     const themeVars = {
       bo_l: '#ffffff', bo_d: '#1e1e1e',
+      ui_l: '#ffffff', ui_d: '#1e1e1e',
       to_l: '#2e2e2e', to_d: '#dbdbdb',
-      lo_l: '#2463d1', lo_d: '#58a6ff'
+      lo_l: '#2463d1', lo_d: '#58a6ff',
+      nv_l: '#2e2e2e', nv_d: '#dbdbdb',
+      mt_l: '#2e2e2e', mt_d: '#dbdbdb'
     };
     const m = mapping();
     const light = computeAutoLinkHex(m, 'Light', themeVars, []);
@@ -220,6 +233,7 @@ describe('LinkDecorator', () => {
       colorMappings: mappings,
       notifyOnMultipleMatches: true,
       colorLinks: true,
+      colorUiLabels: true,
       experimentalLinkTuning: {
         hueStepDegrees: 15,
         minDeltaE: 0.12,
@@ -319,6 +333,22 @@ describe('LinkDecorator', () => {
     expect(el.getAttribute('data-href')).toBe('AI Summary');
     expect(el.style.getPropertyValue('--page-color-prop-link-color')).toBe('');
     expect(el.style.getPropertyValue('color')).toBe('rgb(0, 0, 0)');
+  });
+
+  it('getResolvedLinkColor checks colorUiLabels when isUiLabel is true', () => {
+    const plugin = makePlugin([
+      mapping({ linkColorLight: '#ff00ff', isAutoLinkLight: false })
+    ]);
+    plugin.settings.colorLinks = true;
+    plugin.settings.colorUiLabels = false;
+    const decorator = new LinkDecorator(plugin);
+    expect(decorator.getResolvedLinkColor(plugin.settings.colorMappings[0], false)).toBe('#ff00ff');
+    expect(decorator.getResolvedLinkColor(plugin.settings.colorMappings[0], true)).toBeNull();
+
+    plugin.settings.colorLinks = false;
+    plugin.settings.colorUiLabels = true;
+    expect(decorator.getResolvedLinkColor(plugin.settings.colorMappings[0], false)).toBeNull();
+    expect(decorator.getResolvedLinkColor(plugin.settings.colorMappings[0], true)).toBe('#ff00ff');
   });
 
   it('getResolvedLinkColor returns the manual link color when not in auto mode', () => {

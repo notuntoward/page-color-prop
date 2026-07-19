@@ -112,13 +112,11 @@ export class LinkDecorator {
 	}
 
 	/** Compute the resolved link color for `mapping` in the current theme. */
-	public getResolvedLinkColor(mapping: PropertyColorMapping): string | null {
-		// The "Color links" setting is the global switch for link tinting.
-		// Honor it here so every caller — the reading-view postprocessor,
-		// the view observers, and the CodeMirror Live Preview extension —
-		// stops coloring links when it is off, not just the ones that go
-		// through decorateLink's own early-return.
-		if (!this.plugin.settings.colorLinks) {
+	public getResolvedLinkColor(mapping: PropertyColorMapping, isUiLabel = false): string | null {
+		const enabled = isUiLabel
+			? this.plugin.settings.colorUiLabels
+			: this.plugin.settings.colorLinks;
+		if (!enabled) {
 			return null;
 		}
 
@@ -232,10 +230,14 @@ export class LinkDecorator {
 	public decorateLink(
 		element: HTMLElement,
 		sourcePath: string,
-		explicitLinkName?: string
+		explicitLinkName?: string,
+		isUiLabel = false
 	): void {
 		if (!element.instanceOf(HTMLElement)) return;
-		if (!this.plugin.settings.colorLinks) {
+		const enabled = isUiLabel
+			? this.plugin.settings.colorUiLabels
+			: this.plugin.settings.colorLinks;
+		if (!enabled) {
 			this.clearDecoration(element);
 			return;
 		}
@@ -249,7 +251,7 @@ export class LinkDecorator {
 			this.clearDecoration(element);
 			return;
 		}
-		const color = this.getResolvedLinkColor(mapping);
+		const color = this.getResolvedLinkColor(mapping, isUiLabel);
 		if (!color) {
 			this.clearDecoration(element);
 			return;
@@ -271,12 +273,13 @@ export class LinkDecorator {
 	public decorateLinksInContainer(
 		container: HTMLElement | Document,
 		sourcePath: string,
-		selector: string = 'a.internal-link'
+		selector: string = 'a.internal-link',
+		isUiLabel = false
 	): void {
 		const nodes = container.querySelectorAll(selector);
 		nodes.forEach((node) => {
 			if (node.instanceOf(HTMLElement)) {
-				this.decorateLink(node, sourcePath);
+				this.decorateLink(node, sourcePath, undefined, isUiLabel);
 			}
 		});
 	}
@@ -294,23 +297,24 @@ export class LinkDecorator {
 	public observeContainer(
 		container: HTMLElement,
 		sourcePath: string,
-		selector: string = 'a.internal-link'
+		selector: string = 'a.internal-link',
+		isUiLabel = false
 	): void {
 		if (this.observers.has(container)) return;
 		// Initial sweep.
-		this.decorateLinksInContainer(container, sourcePath, selector);
+		this.decorateLinksInContainer(container, sourcePath, selector, isUiLabel);
 
 		const observer = new MutationObserver((mutations) => {
 			for (const m of mutations) {
 				m.addedNodes.forEach((node) => {
 					if (!node.instanceOf(HTMLElement)) return;
 					if (node.matches(selector)) {
-						this.decorateLink(node, sourcePath);
+						this.decorateLink(node, sourcePath, undefined, isUiLabel);
 					}
 					// Also recurse into the added subtree.
 					node.querySelectorAll(selector).forEach((child) => {
 						if (child.instanceOf(HTMLElement)) {
-							this.decorateLink(child, sourcePath);
+							this.decorateLink(child, sourcePath, undefined, isUiLabel);
 						}
 					});
 				});
@@ -335,7 +339,7 @@ export class LinkDecorator {
 	 * stable workspace container, so we observe document.body for
 	 * additions and decorate anything new.
 	 */
-	public observeDocument(): void {
+	public observeDocument(isUiLabel = false): void {
 		if (this.documentObserver) return;
 		this.documentObserver = new MutationObserver((mutations) => {
 			for (const m of mutations) {
@@ -344,11 +348,11 @@ export class LinkDecorator {
 					DEFAULT_CONTAINER_SELECTORS.forEach((sel) => {
 						if (node.matches(sel)) {
 							// Suggestion rows resolve against "" (root) source path.
-							this.decorateLink(node, '');
+							this.decorateLink(node, '', undefined, isUiLabel);
 						}
 						node.querySelectorAll(sel).forEach((child) => {
 							if (child.instanceOf(HTMLElement)) {
-								this.decorateLink(child, '');
+								this.decorateLink(child, '', undefined, isUiLabel);
 							}
 						});
 					});
@@ -372,13 +376,16 @@ export class LinkDecorator {
 			}
 		});
 
-		// View containers (file explorer, backlinks, etc.).
+		// View containers (file explorer, backlinks, etc.) — these are UI labels.
 		this.observers.forEach((_obs, container) => {
-			this.decorateLinksInContainer(container, '', '.tree-item-inner, .nav-file-title-content, .metadata-link-inner, .multi-select-pill-content');
+			this.decorateLinksInContainer(container, '', '.tree-item-inner, .nav-file-title-content, .metadata-link-inner, .multi-select-pill-content', true);
 		});
 
-		// Anything else floating in document.body.
-		this.decorateLinksInContainer(document.body, '', '.suggestion-title, .suggestion-note, a.internal-link');
+		// Floating UI elements (suggestions, etc.) in document.body.
+		this.decorateLinksInContainer(document.body, '', '.suggestion-title, .suggestion-note', true);
+		// Also catch any stray internal links that may have landed in the body
+		// outside of a known markdown view.
+		this.decorateLinksInContainer(document.body, '', 'a.internal-link');
 	}
 
 	/** Disconnect every observer, clear caches, and remove our decorations

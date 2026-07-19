@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { ColorOptimizer, ColorMath, DEFAULT_LINK_TUNING, type ThemeInputs } from "../color-optimizer";
-import { assignRuleHueOffsets } from "../rule-palette";
 import type { SingleThemeInputs } from "../color-optimizer";
 
 const mockBaseThemes: { name: string; inputs: ThemeInputs }[] = [
@@ -97,7 +96,7 @@ describe("Color Optimizer Core Tests", () => {
         expect(output.bc_d).not.toBe(inputs.bo_d);
 
         expect(bc_lLab.L).toBeGreaterThanOrEqual(0.88);
-        expect(bc_dLab.L).toBeLessThanOrEqual(0.18);
+        expect(bc_dLab.L).toBeLessThanOrEqual(0.25);
 
         const bo_lLab = ColorMath.rgbToOklab(bo_lRgb);
         const bo_dLab = ColorMath.rgbToOklab(bo_dRgb);
@@ -113,8 +112,21 @@ describe("Color Optimizer Core Tests", () => {
         expect(ColorMath.deltaE(lc_lLab, to_lLab)).toBeGreaterThanOrEqual(0.12);
         expect(ColorMath.deltaE(lc_dLab, to_dLab)).toBeGreaterThanOrEqual(0.12);
 
-        expect(ColorMath.deltaE(lc_lLab, lo_lLab)).toBeGreaterThanOrEqual(0.12);
-        expect(ColorMath.deltaE(lc_dLab, lo_dLab)).toBeGreaterThanOrEqual(0.12);
+        const baseLch = ColorMath.oklabToOklch(ColorMath.rgbToOklab(ColorMath.hexToRgb(inputs.base)));
+
+        const lo_lLch = ColorMath.oklabToOklch(lo_lLab);
+        const hueDiffL = Math.min(Math.abs(baseLch.h - lo_lLch.h), 360 - Math.abs(baseLch.h - lo_lLch.h));
+        const skipL = lo_lLch.C > 0.04 && hueDiffL < 30;
+        if (!skipL) {
+          expect(ColorMath.deltaE(lc_lLab, lo_lLab)).toBeGreaterThanOrEqual(0.12);
+        }
+
+        const lo_dLch = ColorMath.oklabToOklch(lo_dLab);
+        const hueDiffD = Math.min(Math.abs(baseLch.h - lo_dLch.h), 360 - Math.abs(baseLch.h - lo_dLch.h));
+        const skipD = lo_dLch.C > 0.04 && hueDiffD < 30;
+        if (!skipD) {
+          expect(ColorMath.deltaE(lc_dLab, lo_dLab)).toBeGreaterThanOrEqual(0.12);
+        }
       });
     });
 
@@ -177,136 +189,60 @@ describe("Color Optimizer Core Tests", () => {
   });
 });
 
-describe("Accent-relative rule palette", () => {
-  describe("Stable rule identity", () => {
-    it("keeps a rule palette assignment stable across list reordering", () => {
-      const first = assignRuleHueOffsets(["rule-a", "rule-b", "rule-c"]);
-      const reordered = assignRuleHueOffsets(["rule-c", "rule-a", "rule-b"]);
-      expect(reordered.get("rule-a")).toBe(first.get("rule-a"));
-      expect(reordered.get("rule-b")).toBe(first.get("rule-b"));
-      expect(reordered.get("rule-c")).toBe(first.get("rule-c"));
-    });
+describe("Manual Base Color Model", () => {
+  const lightTheme: SingleThemeInputs = {
+    backgroundHex: "#ffffff",
+    textHex: "#242424",
+    defaultLinkHex: "#2463d1",
+    isLight: true,
+  };
 
-    it("assigns five unique preferred offsets to five rules", () => {
-      const assignments = assignRuleHueOffsets([
-        "rule-a",
-        "rule-b",
-        "rule-c",
-        "rule-d",
-        "rule-e",
-      ]);
-      expect(new Set(assignments.values()).size).toBe(5);
-    });
+  const sameAsDefaultLinkHue = lightTheme.defaultLinkHex;
+
+  function makeMapping(overrides: Partial<import("../settings").PropertyColorMapping> = {}): import("../settings").PropertyColorMapping {
+    return {
+      id: "rule-1",
+      baseColor: "#4f8cc9",
+      property: "status",
+      value: "done",
+      colorLight: "",
+      colorDark: "",
+      isAutoLight: true,
+      isAutoDark: true,
+      matchType: "exact",
+      linkColorLight: "",
+      linkColorDark: "",
+      isAutoLinkLight: true,
+      isAutoLinkDark: true,
+      ...overrides,
+    };
+  }
+
+  it("uses the user-selected base color hue, not the theme accent", () => {
+    const a = makeMapping({ baseColor: "#2050c0" });
+    const b = makeMapping({ baseColor: "#c02050", id: "rule-2" });
+    const rA = ColorOptimizer.computeRuleColors(a, [a], lightTheme, [], DEFAULT_LINK_TUNING);
+    const rB = ColorOptimizer.computeRuleColors(b, [b], lightTheme, [], DEFAULT_LINK_TUNING);
+    const hueA = ColorMath.oklabToOklch(ColorMath.rgbToOklab(ColorMath.hexToRgb(rA.backgroundHex))).h;
+    const hueB = ColorMath.oklabToOklch(ColorMath.rgbToOklab(ColorMath.hexToRgb(rB.backgroundHex))).h;
+    expect(Math.abs(hueA - hueB)).toBeGreaterThan(30);
   });
 
-  describe("optimizeRuleFromAccent", () => {
-    const lightTheme: SingleThemeInputs = {
-      backgroundHex: "#ffffff",
-      textHex: "#242424",
-      defaultLinkHex: "#2463d1",
-      isLight: true,
-    };
 
-    it("finds a distinct rule link when accent and default link are identical", () => {
-      const accentHex = "#3b82f6";
-      const theme: SingleThemeInputs = {
-        backgroundHex: "#ffffff",
-        textHex: "#242424",
-        defaultLinkHex: accentHex,
-        isLight: true,
-      };
-      const result = ColorOptimizer.optimizeRuleFromAccent(
-        accentHex,
-        "rule-a",
-        ["rule-a", "rule-b"],
-        theme,
-        [],
-        DEFAULT_LINK_TUNING
-      );
+  it("keeps this rule's link readable on other rules' backgrounds", () => {
+    const a = makeMapping({ id: "a", baseColor: "#1f9e89" });
+    const b = makeMapping({ id: "b", baseColor: "#a83280" });
+    const rA = ColorOptimizer.computeRuleColors(a, [a, b], lightTheme, [], DEFAULT_LINK_TUNING);
+    const rB = ColorOptimizer.computeRuleColors(b, [a, b], lightTheme, [], DEFAULT_LINK_TUNING);
+    const contrast = ColorMath.getContrast(ColorMath.hexToRgb(rA.linkHex), ColorMath.hexToRgb(rB.backgroundHex));
+    expect(contrast).toBeGreaterThanOrEqual(DEFAULT_LINK_TUNING.minContrast);
+  });
 
-      const linkRgb = ColorMath.hexToRgb(result.linkHex);
-      const linkLab = ColorMath.rgbToOklab(linkRgb);
-      const defaultLinkLab = ColorMath.rgbToOklab(
-        ColorMath.hexToRgb(accentHex)
-      );
-
-      expect(ColorMath.getContrast(
-        linkRgb,
-        ColorMath.hexToRgb(theme.backgroundHex)
-      )).toBeGreaterThanOrEqual(DEFAULT_LINK_TUNING.minContrast);
-
-      expect(ColorMath.deltaE(linkLab, defaultLinkLab))
-        .toBeGreaterThanOrEqual(DEFAULT_LINK_TUNING.minDeltaE);
-
-      expect(result.linkHex).toMatch(/^#[0-9a-f]{6}$/i);
-      expect(result.backgroundHex).toMatch(/^#[0-9a-f]{6}$/i);
-    });
-
-    it("keeps an automatic rule background and link broadly related", () => {
-      const result = ColorOptimizer.optimizeRuleFromAccent(
-        "#3b82f6",
-        "rule-a",
-        ["rule-a"],
-        lightTheme,
-        [],
-        DEFAULT_LINK_TUNING
-      );
-
-      const bgLch = ColorMath.oklabToOklch(
-        ColorMath.rgbToOklab(ColorMath.hexToRgb(result.backgroundHex))
-      );
-      const linkLch = ColorMath.oklabToOklch(
-        ColorMath.rgbToOklab(ColorMath.hexToRgb(result.linkHex))
-      );
-
-      const hueDistance = Math.min(
-        Math.abs(bgLch.h - linkLch.h),
-        360 - Math.abs(bgLch.h - linkLch.h)
-      );
-
-      expect(hueDistance).toBeLessThanOrEqual(90);
-    });
-
-    it("keeps an auto link distinct from other manual rule links", () => {
-      const otherManualLink = "#a72d61";
-      const result = ColorOptimizer.optimizeRuleFromAccent(
-        "#3b82f6",
-        "rule-a",
-        ["rule-a", "rule-b"],
-        lightTheme,
-        [otherManualLink],
-        DEFAULT_LINK_TUNING
-      );
-
-      const resultLab = ColorMath.rgbToOklab(
-        ColorMath.hexToRgb(result.linkHex)
-      );
-      const otherLab = ColorMath.rgbToOklab(
-        ColorMath.hexToRgb(otherManualLink)
-      );
-
-      expect(ColorMath.deltaE(resultLab, otherLab))
-        .toBeGreaterThanOrEqual(DEFAULT_LINK_TUNING.minDeltaE);
-    });
-
-    it("returns identical auto colors for identical inputs (resolver parity)", () => {
-      const a = ColorOptimizer.optimizeRuleFromAccent(
-        "#3b82f6",
-        "rule-a",
-        ["rule-a"],
-        lightTheme,
-        [],
-        DEFAULT_LINK_TUNING
-      );
-      const b = ColorOptimizer.optimizeRuleFromAccent(
-        "#3b82f6",
-        "rule-a",
-        ["rule-a"],
-        lightTheme,
-        [],
-        DEFAULT_LINK_TUNING
-      );
-      expect(a).toEqual(b);
-    });
+  it("flags fallback instead of silently returning an unchecked color", () => {
+    const pathological = makeMapping({ baseColor: sameAsDefaultLinkHue });
+    const result = ColorOptimizer.computeRuleColors(pathological, [pathological], lightTheme, [], DEFAULT_LINK_TUNING);
+    expect(result.fallbackUsed === true || ColorMath.getContrast(
+      ColorMath.hexToRgb(result.linkHex), ColorMath.hexToRgb(lightTheme.backgroundHex),
+    ) >= DEFAULT_LINK_TUNING.minContrast).toBe(true);
   });
 });

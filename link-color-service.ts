@@ -34,6 +34,10 @@ export interface ThemeCssVars {
 	bo_l: string;
 	/** Dark-theme `--background-primary` resolved to a hex string. */
 	bo_d: string;
+	/** Light-theme `--background-secondary` resolved to a hex string. */
+	ui_l: string;
+	/** Dark-theme `--background-secondary` resolved to a hex string. */
+	ui_d: string;
 	/** Light-theme `--text-normal` resolved to a hex string. */
 	to_l: string;
 	/** Dark-theme `--text-normal` resolved to a hex string. */
@@ -42,6 +46,14 @@ export interface ThemeCssVars {
 	lo_l: string;
 	/** Dark-theme `--link-color` resolved to a hex string. */
 	lo_d: string;
+	/** Light-theme `--nav-item-color` resolved to a hex string. */
+	nv_l: string;
+	/** Dark-theme `--nav-item-color` resolved to a hex string. */
+	nv_d: string;
+	/** Light-theme `--text-muted` resolved to a hex string. */
+	mt_l: string;
+	/** Dark-theme `--text-muted` resolved to a hex string. */
+	mt_d: string;
 }
 
 /**
@@ -124,19 +136,27 @@ export function readBothThemeVars(): ThemeCssVars | null {
 	const body = document.body;
 	const wasDark = body.classList.contains('theme-dark');
 
-	const readVars = (): { bo: string; to: string; lo: string } | null => {
+	const readVars = (): { bo: string; ui: string; to: string; lo: string; nv: string; mt: string } | null => {
 		const bo = readThemeCssVar('var(--background-primary)');
+		const ui = readThemeCssVar('var(--background-secondary)');
 		const to = readThemeCssVar('var(--text-normal)');
 		const lo = readThemeCssVar('var(--link-color)');
-		if (!bo || !to || !lo) return null;
-		return { bo, to, lo };
+		const nv = readThemeCssVar('var(--nav-item-color)');
+		const mt = readThemeCssVar('var(--text-muted)');
+		if (!bo || !ui || !to || !lo) return null;
+		return { bo, ui, to, lo, nv: nv ?? to, mt: mt ?? to };
 	};
 
-	let light: { bo: string; to: string; lo: string } | null = null;
-	let dark: { bo: string; to: string; lo: string } | null = null;
+	let light: { bo: string; ui: string; to: string; lo: string; nv: string; mt: string } | null = null;
+	let dark: { bo: string; ui: string; to: string; lo: string; nv: string; mt: string } | null = null;
 	try {
-		light = wasDark ? readWithBodyClass(body, 'Light') : readVars();
-		dark = wasDark ? readVars() : readWithBodyClass(body, 'Dark');
+		if (wasDark) {
+			dark = readVars();
+			light = readWithBodyClass(body, 'Light');
+		} else {
+			light = readVars();
+			dark = readWithBodyClass(body, 'Dark');
+		}
 	} finally {
 		body.classList.remove('theme-light', 'theme-dark');
 		body.classList.add(wasDark ? 'theme-dark' : 'theme-light');
@@ -145,11 +165,17 @@ export function readBothThemeVars(): ThemeCssVars | null {
 	if (!light || !dark) return null;
 	return {
 		bo_l: light.bo,
-		to_l: light.to,
-		lo_l: light.lo,
 		bo_d: dark.bo,
+		ui_l: light.ui,
+		ui_d: dark.ui,
+		to_l: light.to,
 		to_d: dark.to,
-		lo_d: dark.lo
+		lo_l: light.lo,
+		lo_d: dark.lo,
+		nv_l: light.nv,
+		nv_d: dark.nv,
+		mt_l: light.mt,
+		mt_d: dark.mt
 	};
 }
 
@@ -157,9 +183,19 @@ function readWithBodyClass(body: HTMLElement, to: 'Light' | 'Dark') {
 	body.classList.remove('theme-light', 'theme-dark');
 	body.classList.add(to === 'Dark' ? 'theme-dark' : 'theme-light');
 	const bo = readThemeCssVar('var(--background-primary)');
+	const ui = readThemeCssVar('var(--background-secondary)');
 	const to2 = readThemeCssVar('var(--text-normal)');
 	const lo = readThemeCssVar('var(--link-color)');
-	return { bo: bo ?? '', to: to2 ?? '', lo: lo ?? '' };
+	const nv = readThemeCssVar('var(--nav-item-color)');
+	const mt = readThemeCssVar('var(--text-muted)');
+	return {
+		bo: bo ?? '',
+		ui: ui ?? '',
+		to: to2 ?? '',
+		lo: lo ?? '',
+		nv: nv ?? to2 ?? '',
+		mt: mt ?? to2 ?? ''
+	};
 }
 
 /**
@@ -189,39 +225,28 @@ export interface ResolvedRuleColors {
 export function computeAutoRuleColors(
   mapping: PropertyColorMapping,
   allMappings: PropertyColorMapping[],
-  theme: 'Light' | 'Dark',
+  theme: "Light" | "Dark",
   themeVars: ThemeCssVars,
   otherLinkHexes: string[],
-  tuning: LinkColorTuning = DEFAULT_LINK_TUNING
-): ResolvedRuleColors {
-  const isLight = theme === 'Light';
-
-  const accentHex = readThemeCssVar(ACCENT_SEED_COLOR);
-  if (!accentHex) {
-    return {
-      backgroundHex: '#808080',
-      linkHex: '#808080',
-    };
-  }
-
-  const result = ColorOptimizer.optimizeRuleFromAccent(
-    accentHex,
-    mapping.id,
-    allMappings.map(other => other.id),
+  tuning: LinkColorTuning = DEFAULT_LINK_TUNING,
+): { backgroundHex: string; linkHex: string } {
+  const isLight = theme === "Light";
+  const result = ColorOptimizer.computeRuleColors(
+    mapping,
+    allMappings,
     {
       backgroundHex: isLight ? themeVars.bo_l : themeVars.bo_d,
+      uiBackgroundHex: isLight ? themeVars.ui_l : themeVars.ui_d,
       textHex: isLight ? themeVars.to_l : themeVars.to_d,
       defaultLinkHex: isLight ? themeVars.lo_l : themeVars.lo_d,
+      navItemHex: isLight ? themeVars.nv_l : themeVars.nv_d,
+      textMutedHex: isLight ? themeVars.mt_l : themeVars.mt_d,
       isLight,
     },
     otherLinkHexes,
-    tuning
+    tuning,
   );
-
-  return {
-    backgroundHex: result.backgroundHex,
-    linkHex: result.linkHex,
-  };
+  return { backgroundHex: result.backgroundHex, linkHex: result.linkHex };
 }
 
 /**
