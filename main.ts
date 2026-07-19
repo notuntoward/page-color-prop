@@ -67,7 +67,7 @@ export default class PageColorPropPlugin extends Plugin {
 		// Initialize link decoration.
 		this.linkDecorator = new LinkDecorator(this);
 		this.linkDecorator.invalidateCaches();
-		this.linkDecorator.observeDocument();
+		this.linkDecorator.observeDocument(true);
 		this.registerMarkdownPostProcessor((el, ctx) => {
 			this.linkDecorator?.decorateLinksInContainer(el, ctx.sourcePath, 'a.internal-link');
 		});
