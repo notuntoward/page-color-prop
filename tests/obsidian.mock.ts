@@ -8,7 +8,9 @@ export class Notice {
   }
 }
 
-export class MarkdownView {}
+export class TFile {}
+export class FileView {}
+export class MarkdownView extends FileView {}
 export class Plugin {
   registerEvent = vi.fn();
   registerMarkdownPostProcessor = vi.fn();
@@ -17,7 +19,6 @@ export class Plugin {
   loadData = vi.fn();
   saveData = vi.fn();
 }
-export class TFile {}
 export class WorkspaceLeaf {}
 export class App {}
 export class PluginSettingTab {}

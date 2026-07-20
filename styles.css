@@ -5,6 +5,19 @@
   background-color: var(--page-color-prop-background) !important;
 }
 
+/* Direct fallback support so both internal and external target selectors work */
+.tree-item-self.has-page-color .tree-item-inner,
+.tree-item-self.page-color-prop-link .tree-item-inner,
+.nav-file-title.has-page-color .nav-file-title-content,
+.nav-file-title.page-color-prop-link .nav-file-title-content {
+  color: var(--page-color, var(--page-color-prop-link-color)) !important;
+}
+
+.workspace-tab-header.has-page-color .workspace-tab-header-inner-title,
+.workspace-tab-header.page-color-prop-tab .workspace-tab-header-inner-title {
+  color: var(--page-color, var(--page-color-prop-tab-color)) !important;
+}
+
 /* Link decoration: every link whose destination note matches a Page
    Color Prop rule is given this class plus an inline --page-color-prop-
    link-color and a data-page-color-prop-link-rule attribute by the

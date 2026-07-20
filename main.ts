@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import { FileView, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import {
 	PageColorPropSettings,
 	DEFAULT_SETTINGS,
@@ -28,6 +28,7 @@ export default class PageColorPropPlugin extends Plugin {
 	settings: PageColorPropSettings;
 	isDarkTheme: boolean = false;
 	private themeObserver: MutationObserver | null = null;
+	private fileExplorerObserver: MutationObserver | null = null;
 	private multipleMatchNoticeKeys: Set<string> = new Set();
 	private pendingRetryHandles: Set<number> = new Set();
 	linkDecorator: LinkDecorator | null = null;
@@ -81,8 +82,27 @@ export default class PageColorPropPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('layout-change', () => {
 				this.installViewObservers();
+				this.updateFileExplorerColors();
+				this.updateAllTabHeaderColors();
 			})
 		);
+
+		this.app.workspace.onLayoutReady(() => {
+			this.installViewObservers();
+			this.updateFileExplorerColors();
+			this.updateAllTabHeaderColors();
+			this.installFileExplorerObserver();
+		});
+	}
+
+	private installFileExplorerObserver(): void {
+		const navContainer = document.querySelector('.nav-files-container');
+		if (!navContainer || !navContainer.instanceOf(HTMLElement)) return;
+
+		this.fileExplorerObserver = new MutationObserver(() => {
+			this.updateFileExplorerColors();
+		});
+		this.fileExplorerObserver.observe(navContainer, { childList: true, subtree: true });
 	}
 
 	onunload() {
@@ -90,6 +110,10 @@ export default class PageColorPropPlugin extends Plugin {
 		this.clearPendingRetries();
 		if (this.themeObserver) {
 			this.themeObserver.disconnect();
+		}
+		if (this.fileExplorerObserver) {
+			this.fileExplorerObserver.disconnect();
+			this.fileExplorerObserver = null;
 		}
 		if (this.linkDecorator) {
 			this.linkDecorator.dispose();
@@ -336,12 +360,9 @@ export default class PageColorPropPlugin extends Plugin {
 	}
 
 	private onMetadataChanged(file: TFile) {
-		// When metadata changes, reapply colors to all leaves
 		this.applyColorsToAllLeaves();
-		// Invalidate this file's cache entry and refresh visible link
-		// decorations. Other rules' colors are unchanged, so we just
-		// redecorate; theme is unchanged, so caches only need clearing
-		// for this file.
+		this.updateFileExplorerColors();
+		this.updateAllTabHeaderColors();
 		if (this.linkDecorator) {
 			this.linkDecorator.invalidateCaches();
 			this.linkDecorator.refreshAllVisible();
@@ -349,17 +370,21 @@ export default class PageColorPropPlugin extends Plugin {
 	}
 
 	private onLayoutChange() {
-		// When layout changes (split, close pane, etc.), reapply colors
 		this.applyColorsToAllLeaves();
+		this.updateFileExplorerColors();
+		this.updateAllTabHeaderColors();
 		this.installViewObservers();
 	}
 
 	private onFileOpen() {
-		// When a file is opened in a leaf (e.g., via Quick Switcher++), reapply colors
 		this.applyColorsToAllLeaves();
+		this.updateAllTabHeaderColors();
 	}
 
 	public applyColorsToAllLeaves(retriesLeft: number = 3) {
+		this.updateFileExplorerColors();
+		this.updateAllTabHeaderColors();
+
 		const leaves = this.app.workspace.getLeavesOfType('markdown');
 		let needsRetry = false;
 		// Elements whose color must be preserved during the stale-style sweep:
@@ -609,6 +634,74 @@ export default class PageColorPropPlugin extends Plugin {
 
 	private removeAllStyles() {
 		this.removeStaleStyles(new Set(), new Set());
+	}
+
+	private updateFileExplorerColors(): void {
+		const explorerLeaves = this.app.workspace.getLeavesOfType('file-explorer');
+		if (!explorerLeaves.length) return;
+
+		for (const leaf of explorerLeaves) {
+			const container = leaf.view?.containerEl;
+			if (!container || !container.instanceOf(HTMLElement)) continue;
+
+			const fileItems = container.querySelectorAll<HTMLElement>('.tree-item-self[data-path], .nav-file-title[data-path]');
+
+			fileItems.forEach((el) => {
+				const filePath = el.getAttribute('data-path');
+				if (!filePath) return;
+
+				const abstractFile = this.app.vault.getAbstractFileByPath(filePath);
+				if (!abstractFile || !(abstractFile instanceof TFile)) return;
+
+				const mapping = this.linkDecorator?.getMatchingMappingForFile(abstractFile);
+				const color = mapping ? this.linkDecorator?.getResolvedLinkColor(mapping, true) : null;
+
+				if (color) {
+					el.style.setProperty('--page-color-prop-link-color', color);
+					el.style.setProperty('--page-color', color);
+					el.addClass('page-color-prop-link');
+					el.addClass('has-page-color');
+				} else {
+					el.style.removeProperty('--page-color-prop-link-color');
+					el.style.removeProperty('--page-color');
+					el.removeClass('page-color-prop-link');
+					el.removeClass('has-page-color');
+				}
+			});
+		}
+	}
+
+	private updateAllTabHeaderColors(): void {
+		this.app.workspace.iterateAllLeaves((leaf) => {
+			const tabHeaderEl = (leaf as any).tabHeaderEl as HTMLElement | undefined;
+			if (!tabHeaderEl) return;
+
+			const file = leaf.view instanceof FileView ? leaf.view.file : null;
+
+			if (file) {
+				tabHeaderEl.setAttribute('data-path', file.path);
+				const mapping = this.linkDecorator?.getMatchingMappingForFile(file);
+				const color = mapping ? this.linkDecorator?.getResolvedLinkColor(mapping, true) : null;
+
+				if (color) {
+					tabHeaderEl.style.setProperty('--page-color-prop-tab-color', color);
+					tabHeaderEl.style.setProperty('--page-color', color);
+					tabHeaderEl.addClass('page-color-prop-tab');
+					tabHeaderEl.addClass('has-page-color');
+				} else {
+					this.removeTabColorFromElement(tabHeaderEl);
+				}
+			} else {
+				this.removeTabColorFromElement(tabHeaderEl);
+			}
+		});
+	}
+
+	private removeTabColorFromElement(el: HTMLElement): void {
+		el.style.removeProperty('--page-color-prop-tab-color');
+		el.style.removeProperty('--page-color');
+		el.removeClass('page-color-prop-tab');
+		el.removeClass('has-page-color');
 	}
 
 	isValidColor(color: string): boolean {

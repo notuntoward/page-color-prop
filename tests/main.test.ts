@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import PageColorPropPlugin from '../main.ts';
 import { type PageColorPropSettings, type PropertyColorMapping } from '../settings';
-import { MarkdownView, mockedNotice } from './obsidian.mock';
+import { MarkdownView, mockedNotice, TFile } from './obsidian.mock';
 
 
 function mapping(overrides: Partial<PropertyColorMapping> = {}): PropertyColorMapping {
@@ -35,10 +35,16 @@ function createPlugin(overrides: Partial<PageColorPropSettings> = {}) {
   plugin.pendingRetryHandles = new Set<number>();
   plugin.app = {
     workspace: {
-      getLeavesOfType: vi.fn(() => [])
+      on: vi.fn((_eventName: string, callback: () => void) => callback()),
+      getLeavesOfType: vi.fn(() => []),
+      iterateAllLeaves: vi.fn((cb: (leaf: any) => void) => {})
     },
     metadataCache: {
+      on: vi.fn((_eventName: string, callback: () => void) => callback()),
       getFileCache: vi.fn()
+    },
+    vault: {
+      getAbstractFileByPath: vi.fn(() => null)
     }
   };
   plugin.loadData = vi.fn();
@@ -120,13 +126,14 @@ describe('PageColorPropPlugin', () => {
     const workspace = {
       on: vi.fn((_eventName: string, callback: () => void) => callback()),
       getLeavesOfType: vi.fn(() => []),
+      iterateAllLeaves: vi.fn((cb: (leaf: any) => void) => {}),
       onLayoutReady: vi.fn((cb: () => void) => cb())
     };
     const metadataCache = {
       on: vi.fn((_eventName: string, callback: () => void) => callback())
     };
     const plugin = createPlugin();
-    plugin.app = { workspace, metadataCache };
+    plugin.app = { workspace, metadataCache, vault: { getAbstractFileByPath: vi.fn(() => null) } };
     plugin.addSettingTab = vi.fn();
     plugin.registerEvent = vi.fn();
     plugin.registerMarkdownPostProcessor = vi.fn();
@@ -135,6 +142,7 @@ describe('PageColorPropPlugin', () => {
     plugin.registerThemeChangeListener = vi.fn();
     plugin.applyColorsToAllLeaves = vi.fn();
     plugin.installViewObservers = vi.fn();
+    plugin.installFileExplorerObserver = vi.fn();
     plugin.loadSettings = vi.fn();
     plugin.linkDecorator = {
       invalidateCaches: vi.fn(),
@@ -157,6 +165,7 @@ describe('PageColorPropPlugin', () => {
     expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
     expect(plugin.updateThemeState).toHaveBeenCalledTimes(1);
     expect(plugin.registerThemeChangeListener).toHaveBeenCalledTimes(1);
+    expect(plugin.installFileExplorerObserver).toHaveBeenCalledTimes(1);
     // applyColorsToAllLeaves is called both directly and via the
     // layout-change mock that fires immediately. Just check it's at
     // least the 5 the original flow expects.
@@ -729,5 +738,141 @@ describe('PageColorPropPlugin', () => {
     expect(plugin.isValidColor('')).toBe(false);
     expect(plugin.isValidColor('red;')).toBe(false);
     expect(plugin.isValidColor('bad-color')).toBe(false);
+  });
+
+  it('colors file explorer items when a rule matches', () => {
+    const file = Object.assign(new TFile(), { path: 'Note-08.md', basename: 'Note-08' });
+    const explorerLeaf = createLeaf(file);
+    explorerLeaf.view.containerEl.setAttribute('data-type', 'file-explorer');
+    const treeItem = document.createElement('div');
+    treeItem.setAttribute('data-path', 'Note-08.md');
+    treeItem.classList.add('tree-item-self');
+    explorerLeaf.view.containerEl.appendChild(treeItem);
+
+    const plugin = createPlugin({
+      colorMappings: [
+        mapping({ colorLight: '#4e66d0', isAutoLight: false })
+      ]
+    });
+    plugin.linkDecorator = {
+      getMatchingMappingForFile: vi.fn(() => plugin.settings.colorMappings[0]),
+      getResolvedLinkColor: vi.fn(() => '#1a5fb4')
+    } as any;
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([explorerLeaf]);
+    plugin.app.vault.getAbstractFileByPath.mockReturnValue(file);
+
+    plugin.updateFileExplorerColors();
+
+    expect(treeItem.classList.contains('page-color-prop-link')).toBe(true);
+    expect(treeItem.classList.contains('has-page-color')).toBe(true);
+    expect(treeItem.style.getPropertyValue('--page-color-prop-link-color')).toBe('#1a5fb4');
+    expect(treeItem.style.getPropertyValue('--page-color')).toBe('#1a5fb4');
+  });
+
+  it('removes file explorer colors when no rule matches', () => {
+    const file = Object.assign(new TFile(), { path: 'Note-08.md', basename: 'Note-08' });
+    const explorerLeaf = createLeaf(file);
+    explorerLeaf.view.containerEl.setAttribute('data-type', 'file-explorer');
+    const treeItem = document.createElement('div');
+    treeItem.setAttribute('data-path', 'Note-08.md');
+    treeItem.classList.add('tree-item-self', 'page-color-prop-link', 'has-page-color');
+    treeItem.style.setProperty('--page-color-prop-link-color', '#1a5fb4');
+    treeItem.style.setProperty('--page-color', '#1a5fb4');
+    explorerLeaf.view.containerEl.appendChild(treeItem);
+
+    const plugin = createPlugin({
+      colorMappings: [
+        mapping({ property: 'tags', value: 'other', matchType: 'contains', colorLight: '#4e66d0', isAutoLight: false })
+      ]
+    });
+    plugin.linkDecorator = {
+      getMatchingMappingForFile: vi.fn(() => null),
+      getResolvedLinkColor: vi.fn(() => null)
+    } as any;
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([explorerLeaf]);
+    plugin.app.vault.getAbstractFileByPath.mockReturnValue(file);
+
+    plugin.updateFileExplorerColors();
+
+    expect(treeItem.classList.contains('page-color-prop-link')).toBe(false);
+    expect(treeItem.classList.contains('has-page-color')).toBe(false);
+    expect(treeItem.style.getPropertyValue('--page-color-prop-link-color')).toBe('');
+    expect(treeItem.style.getPropertyValue('--page-color')).toBe('');
+  });
+
+  it('colors all tab headers regardless of active leaf', () => {
+    const file = { path: 'Note-08.md', basename: 'Note-08' };
+    const leaf = createLeaf(file);
+    leaf.view.containerEl.setAttribute('data-type', 'markdown');
+    const plugin = createPlugin({
+      colorMappings: [
+        mapping({ colorLight: '#4e66d0', isAutoLight: false })
+      ]
+    });
+    plugin.linkDecorator = {
+      getMatchingMappingForFile: vi.fn(() => plugin.settings.colorMappings[0]),
+      getResolvedLinkColor: vi.fn(() => '#1a5fb4')
+    } as any;
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+    plugin.app.workspace.iterateAllLeaves.mockImplementation((cb: (leaf: any) => void) => {
+      cb(leaf);
+    });
+
+    plugin.updateAllTabHeaderColors();
+
+    expect(leaf.tabHeaderEl.classList.contains('page-color-prop-tab')).toBe(true);
+    expect(leaf.tabHeaderEl.classList.contains('has-page-color')).toBe(true);
+    expect(leaf.tabHeaderEl.getAttribute('data-path')).toBe('Note-08.md');
+    expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color-prop-tab-color')).toBe('#1a5fb4');
+    expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color')).toBe('#1a5fb4');
+  });
+
+  it('removes tab colors when no rule matches', () => {
+    const file = { path: 'Note-08.md', basename: 'Note-08' };
+    const leaf = createLeaf(file);
+    leaf.view.containerEl.setAttribute('data-type', 'markdown');
+    leaf.tabHeaderEl.classList.add('page-color-prop-tab', 'has-page-color');
+    leaf.tabHeaderEl.style.setProperty('--page-color-prop-tab-color', '#1a5fb4');
+    leaf.tabHeaderEl.style.setProperty('--page-color', '#1a5fb4');
+    const plugin = createPlugin({
+      colorMappings: [
+        mapping({ property: 'tags', value: 'other', matchType: 'contains', colorLight: '#4e66d0', isAutoLight: false })
+      ]
+    });
+    plugin.linkDecorator = {
+      getMatchingMappingForFile: vi.fn(() => null),
+      getResolvedLinkColor: vi.fn(() => null)
+    } as any;
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+    plugin.app.workspace.iterateAllLeaves.mockImplementation((cb: (leaf: any) => void) => {
+      cb(leaf);
+    });
+
+    plugin.updateAllTabHeaderColors();
+
+    expect(leaf.tabHeaderEl.classList.contains('page-color-prop-tab')).toBe(false);
+    expect(leaf.tabHeaderEl.classList.contains('has-page-color')).toBe(false);
+    expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color-prop-tab-color')).toBe('');
+    expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color')).toBe('');
+  });
+
+  it('removes tab color from elements without a file', () => {
+    const leaf = createLeaf();
+    leaf.view.containerEl.setAttribute('data-type', 'markdown');
+    leaf.tabHeaderEl.classList.add('page-color-prop-tab', 'has-page-color');
+    leaf.tabHeaderEl.style.setProperty('--page-color-prop-tab-color', '#1a5fb4');
+    leaf.tabHeaderEl.style.setProperty('--page-color', '#1a5fb4');
+    const plugin = createPlugin();
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+    plugin.app.workspace.iterateAllLeaves.mockImplementation((cb: (leaf: any) => void) => {
+      cb(leaf);
+    });
+
+    plugin.updateAllTabHeaderColors();
+
+    expect(leaf.tabHeaderEl.classList.contains('page-color-prop-tab')).toBe(false);
+    expect(leaf.tabHeaderEl.classList.contains('has-page-color')).toBe(false);
+    expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color-prop-tab-color')).toBe('');
+    expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color')).toBe('');
   });
 });
