@@ -1048,7 +1048,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     });
 
     setting.addButton(button => {
-      button.setButtonText("Pick").onClick(() => {
+      button.setIcon('pipette').setTooltip('Pick rule base color').onClick(() => {
         if (colorInput) this.openColorPickerAtElement(colorInput, swatch);
       });
     });
