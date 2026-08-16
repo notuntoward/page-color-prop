@@ -45,6 +45,20 @@ export const DEFAULT_SETTINGS: PageColorPropSettings = {
   experimentalLinkTuning: { ...DEFAULT_LINK_TUNING }
 };
 
+export interface SettingDefinitionControl {
+  type: 'toggle' | 'text' | 'textarea' | 'number' | 'slider' | 'dropdown' | 'file' | 'folder' | 'color';
+  key: keyof PageColorPropSettings;
+}
+
+export interface SettingDefinitionItem {
+  id: string;
+  name?: string;
+  desc?: string;
+  control?: SettingDefinitionControl;
+  onChange?: (value: any) => void | Promise<void>;
+  render?: (containerEl: HTMLElement) => void;
+}
+
 export class PageColorPropSettingTab extends PluginSettingTab {
   plugin: PageColorPropPlugin;
 
@@ -57,7 +71,18 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     // Handled declaratively by Obsidian 1.13 via getSettingDefinitions()
   }
 
-  getSettingDefinitions(): any[] {
+  public refreshTabUI(): void {
+    if (this.containerEl) {
+      this.containerEl.empty();
+      for (const def of this.getSettingDefinitions()) {
+        if (def.render) {
+          def.render(this.containerEl);
+        }
+      }
+    }
+  }
+
+  getSettingDefinitions(): SettingDefinitionItem[] {
     return [
       {
         id: 'description',
@@ -99,7 +124,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
                     isAutoLinkDark: true
                   });
                   await this.plugin.saveSettings();
-                  this.display();
+                  this.refreshTabUI();
                 });
             });
         }
@@ -130,7 +155,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
           this.plugin.applyColorsToAllLeaves();
           this.plugin.refreshLinkDecorations();
-          this.display();
+          this.refreshTabUI();
         }
       },
       {
@@ -146,7 +171,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
           this.plugin.applyColorsToAllLeaves();
           this.plugin.refreshLinkDecorations();
-          this.display();
+          this.refreshTabUI();
         }
       },
       {
@@ -186,7 +211,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
                     if (confirmed) {
                       this.plugin.settings.colorMappings = [];
                       await this.plugin.saveSettings();
-                      this.display();
+                      this.refreshTabUI();
                     }
                   });
               });
@@ -360,7 +385,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       duplicate.id = newRuleId();
       this.plugin.settings.colorMappings.splice(duplicateIndex, 0, duplicate);
       await this.plugin.saveSettings();
-      this.display();
+      this.refreshTabUI();
       this.scrollToMapping(duplicateIndex);
     });
 
@@ -371,7 +396,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           this.plugin.settings.colorMappings[index]
         ];
         await this.plugin.saveSettings();
-        this.display();
+        this.refreshTabUI();
       }
     }, { disabled: index === 0 });
 
@@ -382,14 +407,14 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           this.plugin.settings.colorMappings[index]
         ];
         await this.plugin.saveSettings();
-        this.display();
+        this.refreshTabUI();
       }
     }, { disabled: index === this.plugin.settings.colorMappings.length - 1 });
 
     this.createFooterButton(footer, 'trash-2', 'Delete', async () => {
       this.plugin.settings.colorMappings.splice(index, 1);
       await this.plugin.saveSettings();
-      this.display();
+      this.refreshTabUI();
     }, { warning: true });
   }
 
@@ -968,7 +993,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
         this.plugin.applyColorsToAllLeaves();
         this.plugin.refreshLinkDecorations();
-        this.display();
+        this.refreshTabUI();
       });
       const inputs = swatchRow.querySelectorAll("input[type=color]");
       colorInput = inputs[inputs.length - 1] as HTMLInputElement;
