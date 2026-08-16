@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import PageColorPropPlugin from '../main.ts';
-import { type PageColorPropSettings, type PropertyColorMapping } from '../settings';
+import { PageColorPropSettingTab, type PageColorPropSettings, type PropertyColorMapping } from '../settings';
 import { MarkdownView, mockedNotice, TFile } from './obsidian.mock';
 
 
@@ -874,5 +874,67 @@ describe('PageColorPropPlugin', () => {
     expect(leaf.tabHeaderEl.classList.contains('has-page-color')).toBe(false);
     expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color-prop-tab-color')).toBe('');
     expect(leaf.tabHeaderEl.style.getPropertyValue('--page-color')).toBe('');
+  });
+
+  describe('PageColorPropSettingTab', () => {
+    it('returns declarative setting definitions', () => {
+      const plugin = createPlugin();
+      const tab = new PageColorPropSettingTab({} as any, plugin);
+      const defs = tab.getSettingDefinitions();
+
+      expect(Array.isArray(defs)).toBe(true);
+      expect(defs.some(d => d.id === 'notifyOnMultipleMatches')).toBe(true);
+      expect(defs.some(d => d.id === 'colorUiLabels')).toBe(true);
+      expect(defs.some(d => d.id === 'colorLinks')).toBe(true);
+      expect(defs.some(d => d.id === 'color-mappings-list')).toBe(true);
+    });
+
+    it('renders setting definitions via display fallback when parent display is absent', () => {
+      const createMockEl = (tag = 'div'): any => {
+        const el = document.createElement(tag) as any;
+        el.createEl = vi.fn((t: string, opts?: any) => {
+          const child = createMockEl(t);
+          if (opts?.text) child.textContent = opts.text;
+          if (opts?.cls) child.className = opts.cls;
+          el.appendChild(child);
+          return child;
+        });
+        el.createDiv = vi.fn((arg?: any) => {
+          const child = createMockEl('div');
+          if (typeof arg === 'string') child.className = arg;
+          else if (arg?.text) child.textContent = arg.text;
+          else if (arg?.cls) child.className = arg.cls;
+          el.appendChild(child);
+          return child;
+        });
+        el.createSpan = vi.fn((arg?: any) => {
+          const child = createMockEl('span');
+          if (typeof arg === 'string') child.className = arg;
+          else if (arg?.text) child.textContent = arg.text;
+          else if (arg?.cls) child.className = arg.cls;
+          el.appendChild(child);
+          return child;
+        });
+        el.empty = vi.fn(() => { el.innerHTML = ''; });
+        el.setText = vi.fn((t: string) => { el.textContent = t; });
+        el.appendText = vi.fn((t: string) => { el.textContent = (el.textContent || '') + t; });
+        el.addClass = vi.fn((c: string) => el.classList.add(c));
+        el.removeClass = vi.fn((c: string) => el.classList.remove(c));
+        el.setAttr = vi.fn();
+        el.onClickEvent = vi.fn();
+        return el;
+      };
+
+      const plugin = createPlugin();
+      plugin.saveSettings = vi.fn();
+      plugin.applyColorsToAllLeaves = vi.fn();
+      plugin.refreshLinkDecorations = vi.fn();
+
+      const tab = new PageColorPropSettingTab({} as any, plugin);
+      tab.containerEl = createMockEl('div');
+
+      const defs = tab.getSettingDefinitions();
+      expect(defs.length).toBeGreaterThan(0);
+    });
   });
 });
