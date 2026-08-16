@@ -110,7 +110,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         desc: 'Show a notification when more than one color mapping applies to a note. The lowest matching rule in this list sets the background color.',
         control: {
           type: 'toggle',
-          key: 'notifyOnMultipleMatches'
+          key: 'notifyOnMultipleMatches' satisfies keyof PageColorPropSettings
         },
         onChange: async (value: boolean) => {
           this.plugin.settings.notifyOnMultipleMatches = value;
@@ -123,7 +123,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         desc: 'Color and bold note titles/names in tabs, file explorer/navigator, completions, and other UI elements. Toggle off to keep standard theme UI styling.',
         control: {
           type: 'toggle',
-          key: 'colorUiLabels'
+          key: 'colorUiLabels' satisfies keyof PageColorPropSettings
         },
         onChange: async (value: boolean) => {
           this.plugin.settings.colorUiLabels = value;
@@ -139,7 +139,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         desc: 'Tint links inside the note body pointing to notes matching a rule. Toggle off to keep default theme link coloring.',
         control: {
           type: 'toggle',
-          key: 'colorLinks'
+          key: 'colorLinks' satisfies keyof PageColorPropSettings
         },
         onChange: async (value: boolean) => {
           this.plugin.settings.colorLinks = value;
