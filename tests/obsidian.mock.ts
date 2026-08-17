@@ -21,7 +21,36 @@ export class Plugin {
 }
 export class WorkspaceLeaf {}
 export class App {}
-export class PluginSettingTab {}
+export class PluginSettingTab {
+  containerEl: any;
+  constructor(public app: any, public plugin: any) {
+    this.containerEl = augmentMockEl(document.createElement('div'));
+  }
+  update() {
+    if (this.containerEl && typeof (this as any).getSettingDefinitions === 'function') {
+      this.containerEl.empty();
+      const defs = (this as any).getSettingDefinitions();
+      for (const def of defs) {
+        const setting = new Setting(this.containerEl);
+        if (def.name) setting.setName(def.name);
+        if (def.desc) setting.setDesc(def.desc);
+        if (def.control) {
+          if (def.control.type === 'toggle') {
+            setting.addToggle((t: any) => {
+              t.setValue(this.plugin?.settings?.[def.control.key]);
+            });
+          }
+        }
+        if (def.render) {
+          def.render(setting);
+        }
+      }
+    }
+  }
+  display() {
+    this.update();
+  }
+}
 function augmentMockEl(el: any): any {
   el.createEl = vi.fn((t: string, opts?: any) => {
     const child = augmentMockEl(document.createElement(t));
@@ -58,10 +87,18 @@ function augmentMockEl(el: any): any {
 }
 
 export class Setting {
+  settingEl = augmentMockEl(document.createElement('div'));
   controlEl = augmentMockEl(document.createElement('div'));
+  infoEl = augmentMockEl(document.createElement('div'));
+  nameEl = augmentMockEl(document.createElement('div'));
+  descEl = augmentMockEl(document.createElement('div'));
   constructor(public containerEl?: any) {
+    this.settingEl.appendChild(this.infoEl);
+    this.settingEl.appendChild(this.controlEl);
+    this.infoEl.appendChild(this.nameEl);
+    this.infoEl.appendChild(this.descEl);
     if (containerEl && typeof containerEl.appendChild === 'function') {
-      containerEl.appendChild(this.controlEl);
+      containerEl.appendChild(this.settingEl);
     }
   }
   setName(name: string) { return this; }

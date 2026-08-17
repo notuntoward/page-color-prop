@@ -48,15 +48,24 @@ export const DEFAULT_SETTINGS: PageColorPropSettings = {
 export interface SettingDefinitionControl {
   type: 'toggle' | 'text' | 'textarea' | 'number' | 'slider' | 'dropdown' | 'file' | 'folder' | 'color';
   key: keyof PageColorPropSettings;
+  defaultValue?: any;
+  options?: Record<string, string>;
+  placeholder?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  validate?: (value: any) => string | void | Promise<string | void>;
+  disabled?: boolean | (() => boolean);
 }
 
 export interface SettingDefinitionItem {
-  id: string;
   name?: string;
-  desc?: string;
+  desc?: string | DocumentFragment;
   control?: SettingDefinitionControl;
-  onChange?: (value: any) => void | Promise<void>;
-  render?: (containerEl: HTMLElement) => void;
+  render?: (setting: Setting) => void | (() => void);
+  action?: (index: number) => void;
+  visible?: boolean | (() => boolean);
+  searchable?: boolean;
 }
 
 export class PageColorPropSettingTab extends PluginSettingTab {
@@ -67,160 +76,187 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  display(): void {
-    // Handled declaratively by Obsidian 1.13 via getSettingDefinitions()
-  }
-
-  public refreshTabUI(): void {
-    if (this.containerEl) {
-      this.containerEl.empty();
-      for (const def of this.getSettingDefinitions()) {
-        if (def.render) {
-          def.render(this.containerEl);
-        }
-      }
+  public refreshUI(): void {
+    if (typeof (this as any).update === 'function') {
+      (this as any).update();
+    } else {
+      this.display();
     }
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
-    return [
+    const definitions: SettingDefinitionItem[] = [
       {
-        id: 'description',
         name: '',
-        desc: '',
-        render: (containerEl: HTMLElement) => {
-          containerEl.createEl('p', {
-            text: 'Color note backgrounds based on frontmatter properties. Configure property-to-color mappings below.',
-            cls: 'page-color-prop-description'
+        desc: 'Color note backgrounds based on frontmatter properties. Configure property-to-color mappings below.'
+      },
+      {
+        name: 'Add color mapping',
+        desc: 'Create a new property-to-color mapping',
+        render: (setting: Setting) => {
+          setting.addButton(button => {
+            button
+              .setButtonText('Add new mapping')
+              .setCta()
+              .onClick(async () => {
+                this.plugin.settings.colorMappings.push({
+                  id: newRuleId(),
+                  baseColor: DEFAULT_RULE_BASE_COLOR,
+                  property: '',
+                  value: '',
+                  colorLight: DEFAULT_LIGHT_AUTO_COLOR,
+                  colorDark: DEFAULT_DARK_AUTO_COLOR,
+                  isAutoLight: true,
+                  isAutoDark: true,
+                  matchType: 'exact',
+                  linkColorLight: '',
+                  linkColorDark: '',
+                  isAutoLinkLight: true,
+                  isAutoLinkDark: true
+                });
+                await this.plugin.saveSettings();
+                this.refreshUI();
+              });
           });
         }
       },
       {
-        id: 'add-mapping',
-        name: 'Add color mapping',
-        desc: 'Create a new property-to-color mapping',
-        render: (containerEl: HTMLElement) => {
-          new Setting(containerEl)
-            .setName('Add color mapping')
-            .setDesc('Create a new property-to-color mapping')
-            .addButton(button => {
-              button
-                .setButtonText('Add new mapping')
-                .setCta()
-                .onClick(async () => {
-                  this.plugin.settings.colorMappings.push({
-                    id: newRuleId(),
-                    baseColor: DEFAULT_RULE_BASE_COLOR,
-                    property: '',
-                    value: '',
-                    colorLight: DEFAULT_LIGHT_AUTO_COLOR,
-                    colorDark: DEFAULT_DARK_AUTO_COLOR,
-                    isAutoLight: true,
-                    isAutoDark: true,
-                    matchType: 'exact',
-                    linkColorLight: '',
-                    linkColorDark: '',
-                    isAutoLinkLight: true,
-                    isAutoLinkDark: true
-                  });
-                  await this.plugin.saveSettings();
-                  this.refreshTabUI();
-                });
-            });
-        }
-      },
-      {
-        id: 'notifyOnMultipleMatches',
         name: 'Notify when multiple rules match',
         desc: 'Show a notification when more than one color mapping applies to a note. The lowest matching rule in this list sets the background color.',
         control: {
           type: 'toggle',
-          key: 'notifyOnMultipleMatches' satisfies keyof PageColorPropSettings
-        },
-        onChange: async (value: boolean) => {
-          this.plugin.settings.notifyOnMultipleMatches = value;
-          await this.plugin.saveSettings();
+          key: 'notifyOnMultipleMatches'
         }
       },
       {
-        id: 'colorUiLabels',
         name: 'Color UI labels',
         desc: 'Color and bold note titles/names in tabs, file explorer/navigator, completions, and other UI elements. Toggle off to keep standard theme UI styling.',
-        control: {
-          type: 'toggle',
-          key: 'colorUiLabels' satisfies keyof PageColorPropSettings
-        },
-        onChange: async (value: boolean) => {
-          this.plugin.settings.colorUiLabels = value;
-          await this.plugin.saveSettings();
-          this.plugin.applyColorsToAllLeaves();
-          this.plugin.refreshLinkDecorations();
-          this.refreshTabUI();
+        render: (setting: Setting) => {
+          setting.addToggle(toggle => {
+            toggle
+              .setValue(this.plugin.settings.colorUiLabels)
+              .onChange(async value => {
+                this.plugin.settings.colorUiLabels = value;
+                await this.plugin.saveSettings();
+                this.plugin.applyColorsToAllLeaves();
+                this.plugin.refreshLinkDecorations();
+                this.refreshUI();
+              });
+          });
         }
       },
       {
-        id: 'colorLinks',
         name: 'Color links',
         desc: 'Tint links inside the note body pointing to notes matching a rule. Toggle off to keep default theme link coloring.',
-        control: {
-          type: 'toggle',
-          key: 'colorLinks' satisfies keyof PageColorPropSettings
-        },
-        onChange: async (value: boolean) => {
-          this.plugin.settings.colorLinks = value;
-          await this.plugin.saveSettings();
-          this.plugin.applyColorsToAllLeaves();
-          this.plugin.refreshLinkDecorations();
-          this.refreshTabUI();
-        }
-      },
-      {
-        id: 'color-mappings-list',
-        name: 'Color Mappings',
-        desc: 'Configure frontmatter property rules and colors',
-        render: (containerEl: HTMLElement) => {
-          containerEl.createDiv({
-            cls: 'page-color-prop-rule-priority-note',
-            text: 'Rule priority: if multiple rules match a note, the lowest matching rule below sets the background. Use Move up and Move down to reorder.'
-          });
-
-          if (this.plugin.settings.colorMappings.length > 0) {
-            containerEl.createEl('div', {
-              text: `Color mappings (${this.plugin.settings.colorMappings.length})`,
-              cls: 'page-color-prop-group-heading'
-            });
-
-            this.plugin.settings.colorMappings.forEach((mapping, index) => {
-              this.createMappingSettings(containerEl, mapping, index);
-            });
-
-            new Setting(containerEl)
-              .setName('Clear all mappings')
-              .setDesc('Remove all color mappings (cannot be undone)')
-              .addButton(button => {
-                button
-                  .setButtonText('Clear all')
-                  .setWarning()
-                  .onClick(async () => {
-                    const confirmed = await ConfirmModal.confirm(
-                      this.app,
-                      'Clear all mappings',
-                      `Delete all ${this.plugin.settings.colorMappings.length} color mappings? This action cannot be undone.`,
-                      'Clear all'
-                    );
-                    if (confirmed) {
-                      this.plugin.settings.colorMappings = [];
-                      await this.plugin.saveSettings();
-                      this.refreshTabUI();
-                    }
-                  });
+        render: (setting: Setting) => {
+          setting.addToggle(toggle => {
+            toggle
+              .setValue(this.plugin.settings.colorLinks)
+              .onChange(async value => {
+                this.plugin.settings.colorLinks = value;
+                await this.plugin.saveSettings();
+                this.plugin.applyColorsToAllLeaves();
+                this.plugin.refreshLinkDecorations();
+                this.refreshUI();
               });
-          } else {
-            this.createEmptyState(containerEl);
-          }
+          });
         }
       }
     ];
+
+    if (this.plugin.settings.colorMappings.length === 0) {
+      definitions.push({
+        name: '',
+        render: (setting: Setting) => {
+          setting.settingEl.addClass('page-color-prop-block-setting');
+          setting.infoEl?.remove();
+          setting.controlEl?.remove();
+          this.createEmptyState(setting.settingEl);
+        }
+      });
+    } else {
+      definitions.push({
+        name: '',
+        render: (setting: Setting) => {
+          setting.settingEl.addClass('page-color-prop-block-setting');
+          setting.infoEl?.remove();
+          setting.controlEl?.remove();
+          setting.settingEl.createDiv({
+            cls: 'page-color-prop-rule-priority-note',
+            text: 'Rule priority: if multiple rules match a note, the lowest matching rule below sets the background. Use Move up and Move down to reorder.'
+          });
+          setting.settingEl.createEl('div', {
+            text: `Color mappings (${this.plugin.settings.colorMappings.length})`,
+            cls: 'page-color-prop-group-heading'
+          });
+        }
+      });
+
+      this.plugin.settings.colorMappings.forEach((mapping, index) => {
+        definitions.push({
+          name: '',
+          render: (setting: Setting) => {
+            setting.settingEl.addClass('page-color-prop-block-setting');
+            setting.infoEl?.remove();
+            setting.controlEl?.remove();
+            this.createMappingSettings(setting.settingEl, mapping, index);
+          }
+        });
+      });
+
+      definitions.push({
+        name: 'Clear all mappings',
+        desc: 'Remove all color mappings (cannot be undone)',
+        render: (setting: Setting) => {
+          setting.addButton(button => {
+            button
+              .setButtonText('Clear all')
+              .setWarning()
+              .onClick(async () => {
+                const confirmed = await ConfirmModal.confirm(
+                  this.app,
+                  'Clear all mappings',
+                  `Delete all ${this.plugin.settings.colorMappings.length} color mappings? This action cannot be undone.`,
+                  'Clear all'
+                );
+                if (confirmed) {
+                  this.plugin.settings.colorMappings = [];
+                  await this.plugin.saveSettings();
+                  this.refreshUI();
+                }
+              });
+          });
+        }
+      });
+    }
+
+    return definitions;
+  }
+
+  display(): void {
+    const { containerEl } = this;
+    if (!containerEl) return;
+    containerEl.empty();
+
+    for (const def of this.getSettingDefinitions()) {
+      const setting = new Setting(containerEl);
+      if (def.name) setting.setName(def.name);
+      if (def.desc) setting.setDesc(def.desc);
+
+      if (def.control) {
+        if (def.control.type === 'toggle') {
+          setting.addToggle(toggle => {
+            toggle.setValue(Boolean(this.plugin.settings[def.control!.key]));
+            toggle.onChange(async val => {
+              (this.plugin.settings as any)[def.control!.key] = val;
+              await this.plugin.saveSettings();
+            });
+          });
+        }
+      } else if (def.render) {
+        def.render(setting);
+      }
+    }
   }
 
   onunload(): void {
@@ -385,7 +421,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       duplicate.id = newRuleId();
       this.plugin.settings.colorMappings.splice(duplicateIndex, 0, duplicate);
       await this.plugin.saveSettings();
-      this.refreshTabUI();
+      this.refreshUI();
       this.scrollToMapping(duplicateIndex);
     });
 
@@ -396,7 +432,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           this.plugin.settings.colorMappings[index]
         ];
         await this.plugin.saveSettings();
-        this.refreshTabUI();
+        this.refreshUI();
       }
     }, { disabled: index === 0 });
 
@@ -407,20 +443,21 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           this.plugin.settings.colorMappings[index]
         ];
         await this.plugin.saveSettings();
-        this.refreshTabUI();
+        this.refreshUI();
       }
     }, { disabled: index === this.plugin.settings.colorMappings.length - 1 });
 
     this.createFooterButton(footer, 'trash-2', 'Delete', async () => {
       this.plugin.settings.colorMappings.splice(index, 1);
       await this.plugin.saveSettings();
-      this.refreshTabUI();
+      this.refreshUI();
     }, { warning: true });
   }
 
   private scrollToMapping(index: number) {
     window.requestAnimationFrame(() => {
-      const mappingCards = this.containerEl.querySelectorAll('.page-color-prop-mapping-card');
+      const root = this.containerEl ?? document;
+      const mappingCards = root.querySelectorAll('.page-color-prop-mapping-card');
       const targetCard = mappingCards[index] as HTMLElement | undefined;
       if (targetCard) {
         targetCard.scrollIntoView({ block: 'start' });
@@ -523,6 +560,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     compact = false
   ) {
     const isLight = themeType === 'Light';
+    const autoDefault = isLight
+      ? DEFAULT_LIGHT_AUTO_COLOR
+      : DEFAULT_DARK_AUTO_COLOR;
 
     const colorSettingContainer = containerEl.createDiv('page-color-prop-color-setting-container');
     const settingEl = new Setting(colorSettingContainer);
@@ -548,6 +588,11 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       }
     };
 
+    // Compute the auto colors using the EXACT same function and inputs
+    // that the page background path and link-decorator.ts use, so the
+    // background swatch always matches the rendered note tint. When auto
+    // mode is on, we show the resolved background hex, not the stored
+    // CSS expression (e.g. hsla(var(--accent-h) ... 35%)).
     const computeAutoColors = (): { backgroundHex: string; linkHex: string } => {
       const themeVars = readBothThemeVars();
       if (!themeVars) return { backgroundHex: '#808080', linkHex: '#808080' };
@@ -615,6 +660,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       this.queueSave();
     });
 
+    // Icon-toggle button — shows the ACTION available, not the current state
+    // (per spec section 1).  pipette = currently Auto, click to switch to
+    // manual picking.  sparkles = currently Manual, click to switch to Auto.
     let toggleBtnComponent: any = null;
     settingEl.addButton(button => {
       toggleBtnComponent = button;
@@ -636,6 +684,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       });
     });
 
+    // Swatch — appended after the button so it sits to the right
     const sampleBox = settingEl.controlEl.createEl('button', {
       cls: 'page-color-prop-sample-box',
       type: 'button'
@@ -657,6 +706,62 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       }
       openColorPicker();
     });
+  }
+
+  private createExperimentalTuningSection(containerEl: HTMLElement) {
+    // TEMPORARY — remove once algorithm parameters are finalized
+    const section = containerEl.createDiv('page-color-prop-experimental');
+    const heading = section.createDiv('page-color-prop-experimental-heading');
+    heading.createEl('strong', { text: 'Experimental: auto-color tuning' });
+    heading.createEl('p', {
+      text: 'Temporary sliders for tuning the auto link-color algorithm. Delete this block once values are locked in.',
+      cls: 'page-color-prop-experimental-desc'
+    });
+
+    const tuning = this.plugin.settings.experimentalLinkTuning;
+    if (!tuning) {
+      this.plugin.settings.experimentalLinkTuning = { ...DEFAULT_LINK_TUNING };
+    }
+    const t = this.plugin.settings.experimentalLinkTuning;
+
+    new Setting(section)
+      .setName('Hue offset step (degrees)')
+      .setDesc('How far to rotate the hue between search attempts when constraints fail')
+      .addSlider(slider => slider
+        .setLimits(5, 60, 1)
+        .setValue(t.hueStepDegrees)
+        .setDynamicTooltip()
+        .onChange(async value => {
+          t.hueStepDegrees = value;
+          await this.plugin.saveSettings();
+          this.display();
+        }));
+
+    new Setting(section)
+      .setName('Minimum link distinctness (Delta E)')
+      .setDesc('Minimum perceptual distance a link must have from body text and the theme default link')
+      .addSlider(slider => slider
+        .setLimits(0.02, 0.30, 0.01)
+        .setValue(t.minDeltaE)
+        .setDynamicTooltip()
+        .onChange(async value => {
+          t.minDeltaE = value;
+          await this.plugin.saveSettings();
+          this.display();
+        }));
+
+    new Setting(section)
+      .setName('Minimum contrast ratio')
+      .setDesc('WCAG contrast ratio the link must meet against both backgrounds (4.5 = AA normal text)')
+      .addSlider(slider => slider
+        .setLimits(3.0, 7.0, 0.1)
+        .setValue(t.minContrast)
+        .setDynamicTooltip()
+        .onChange(async value => {
+          t.minContrast = value;
+          await this.plugin.saveSettings();
+          this.display();
+        }));
   }
 
   private createThemeLinkColorSetting(
@@ -682,12 +787,28 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       else mapping.linkColorDark = value;
     };
 
+    // Compute the auto colors using the EXACT same function and inputs
+    // that link-decorator.ts and the page background path use, so the
+    // preview swatch always matches what gets applied at runtime. The
+    // shared resolver returns both the tinted background and the link
+    // color; the preview paints both. Previously this preview had its
+    // own divergent formula (seeded from the rule's background color
+    // instead of the theme accent), which made the preview swatch
+    // show a color that never actually got applied anywhere else.
+    // Delegating to the shared service guarantees the preview is
+    // always what you get.
     const computeAutoColors = (): { backgroundHex: string; linkHex: string } => {
       const themeVars = readBothThemeVars();
       if (!themeVars) return { backgroundHex: '#808080', linkHex: '#808080' };
 
       const tuning = this.plugin.settings.experimentalLinkTuning ?? { ...DEFAULT_LINK_TUNING };
 
+      // Gather other rules' already-assigned (manual) link hexes for
+      // the same theme, so this one doesn't collide visually with
+      // them. Other rules that are themselves in auto mode are
+      // skipped here, mirroring link-decorator.ts's getResolvedLinkColor
+      // to avoid an N^2 cascade and to keep the preview and the real
+      // renderer in lockstep.
       const otherHexes = this.plugin.settings.colorMappings
         .filter(m => m !== mapping)
         .filter(m => !(isLight ? m.isAutoLinkLight : m.isAutoLinkDark))
@@ -738,6 +859,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       this.openColorPickerAtElement(colorPickerInput, preview);
     };
 
+    // Icon-toggle button: shows the ACTION available (per spec section 1).
+    //   currently Auto  -> pipette icon (click to switch to manual)
+    //   currently Manual -> sparkles icon (click to switch to auto)
     let toggleBtnComponent: any = null;
     settingEl.addButton(button => {
       toggleBtnComponent = button;
@@ -760,6 +884,11 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       });
     });
 
+    // Live preview swatch — renders on THIS theme's default (untouched)
+    // page background with three stacked text samples: body text, default
+    // link, and this rule's link color. Per spec section 1. The theme is
+    // forced via a hidden element so the preview shows dark-theme defaults
+    // even while the user is currently in light mode (and vice versa).
     const themeName: 'Light' | 'Dark' = isLight ? 'Light' : 'Dark';
     const preview = settingEl.controlEl.createDiv('page-color-prop-link-preview');
     const defaultBg = this.computeColorFromThemeVarsForTheme('var(--background-primary)', themeName);
@@ -788,6 +917,8 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     };
     updatePreview();
 
+    // Clicking the preview also opens the picker (matches the background
+    // swatch's affordance for symmetry).
     preview.onClickEvent(() => {
       if (getIsAuto()) {
         setIsAuto(false);
@@ -993,7 +1124,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
         this.plugin.applyColorsToAllLeaves();
         this.plugin.refreshLinkDecorations();
-        this.refreshTabUI();
+        this.refreshUI();
       });
       const inputs = swatchRow.querySelectorAll("input[type=color]");
       colorInput = inputs[inputs.length - 1] as HTMLInputElement;
@@ -1062,6 +1193,11 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     details.open = anyFailed;
   }
 
+
+  /** Resolves any color string (hex, rgb, or var(--...)) to a 6-digit hex
+   *  suitable for the native <input type="color"> element, which requires
+   *  a strict hex value. Delegates entirely to readThemeCssVar so this
+   *  logic has exactly one implementation. */
   private resolveColorForPicker(color: string): string {
     return readThemeCssVar(color) ?? '#808080';
   }
@@ -1082,6 +1218,21 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     return this.computeColorFromThemeVarsForTheme(colorStr, null);
   }
 
+  /** Computes a CSS variable's value for a specific theme (light/dark),
+   *  regardless of the current theme. Pass `null` for the current theme.
+   *
+   *  Obsidian theme CSS selectors are typically `body.theme-dark { ... }`,
+   *  so adding the class to a child element does NOT activate those
+   *  variables. The only reliable approach is to temporarily swap the
+   *  class on `<body>` itself. We do this synchronously — the browser
+   *  cannot repaint between the add and remove, so the user sees no flash.
+   *
+   *  The actual CSS-variable-to-hex resolution is delegated to the shared
+   *  readThemeCssVar (link-color-service.ts) so this file never carries its
+   *  own copy of that DOM-measurement logic. Two copies of "read a CSS
+   *  color expression and convert it to hex" is exactly how the auto
+   *  link-color preview bug happened elsewhere in this file — one copy
+   *  quietly drifted from the other. */
   private computeColorFromThemeVarsForTheme(colorStr: string, theme: 'Light' | 'Dark' | null): string {
     const body = document.body;
     const isCurrentlyDark = body.classList.contains('theme-dark');
@@ -1103,6 +1254,10 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     return hex ?? '#808080';
   }
 
+  /** Open a hidden color-picker input anchored to a visible element so the
+   *  native browser color picker popup appears near the user's click
+   *  instead of drifting off-screen. The input is restored to its hidden
+   *  state on the next animation frame. */
   private openColorPickerAtElement(
     input: HTMLInputElement,
     anchor: HTMLElement

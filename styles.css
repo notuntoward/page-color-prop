@@ -81,6 +81,18 @@
   transition: background-color 0.2s ease-in-out;
 }
 
+.setting-item.page-color-prop-block-setting {
+  display: block !important;
+  border-top: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.setting-item.page-color-prop-block-setting > .setting-item-info,
+.setting-item.page-color-prop-block-setting > .setting-item-control {
+  display: none !important;
+}
+
 .page-color-prop-mapping-card {
   border: 1px solid var(--background-modifier-border);
   border-radius: 4px;
