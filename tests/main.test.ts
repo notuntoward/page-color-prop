@@ -25,6 +25,8 @@ function mapping(overrides: Partial<PropertyColorMapping> = {}): PropertyColorMa
 
 function createPlugin(overrides: Partial<PageColorPropSettings> = {}) {
   const plugin = Object.create(PageColorPropPlugin.prototype) as any;
+  plugin.register = vi.fn();
+  plugin.registerEvent = vi.fn();
   plugin.settings = {
     colorMappings: overrides.colorMappings ?? [mapping()],
     notifyOnMultipleMatches: overrides.notifyOnMultipleMatches ?? true,
@@ -33,9 +35,11 @@ function createPlugin(overrides: Partial<PageColorPropSettings> = {}) {
   plugin.isDarkTheme = false;
   plugin.multipleMatchNoticeKeys = new Set<string>();
   plugin.pendingRetryHandles = new Set<number>();
+  plugin.fileExplorerObservers = [];
   plugin.app = {
     workspace: {
       on: vi.fn((_eventName: string, callback: () => void) => callback()),
+      onLayoutReady: vi.fn((cb: () => void) => cb?.()),
       getLeavesOfType: vi.fn(() => []),
       iterateAllLeaves: vi.fn((cb: (leaf: any) => void) => {})
     },
@@ -135,6 +139,7 @@ describe('PageColorPropPlugin', () => {
     const plugin = createPlugin();
     plugin.app = { workspace, metadataCache, vault: { getAbstractFileByPath: vi.fn(() => null) } };
     plugin.addSettingTab = vi.fn();
+    plugin.register = vi.fn();
     plugin.registerEvent = vi.fn();
     plugin.registerMarkdownPostProcessor = vi.fn();
     plugin.registerEditorExtension = vi.fn();
@@ -158,14 +163,14 @@ describe('PageColorPropPlugin', () => {
 
     expect(plugin.loadSettings).toHaveBeenCalledTimes(1);
     expect(plugin.addSettingTab).toHaveBeenCalledTimes(1);
-    // 4 workspace.on: active-leaf-change, layout-change, file-open, layout-change (new)
-    expect(workspace.on).toHaveBeenCalledTimes(4);
-    expect(metadataCache.on).toHaveBeenCalledTimes(1);
-    // 5 registerEvent: the 4 originals + 1 new layout-change for view observers
-    expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
+    // 6 workspace.on: active-leaf-change, layout-change, file-open, layout-change for view observers, plus window-open and window-close for popouts
+    expect(workspace.on).toHaveBeenCalledTimes(6);
+    expect(metadataCache.on).toHaveBeenCalledTimes(2);
+    // 8 registerEvent: 5 originals (active-leaf-change, metadataCache changed, metadataCache resolved, layout-change, file-open) + 1 layout-change for view observers + 2 for popout window events (window-open, window-close)
+    expect(plugin.registerEvent).toHaveBeenCalledTimes(8);
     expect(plugin.updateThemeState).toHaveBeenCalledTimes(1);
     expect(plugin.registerThemeChangeListener).toHaveBeenCalledTimes(1);
-    expect(plugin.installFileExplorerObserver).toHaveBeenCalledTimes(1);
+    expect(plugin.installFileExplorerObserver).toHaveBeenCalledTimes(2);
     // applyColorsToAllLeaves is called both directly and via the
     // layout-change mock that fires immediately. Just check it's at
     // least the 5 the original flow expects.
@@ -883,10 +888,10 @@ describe('PageColorPropPlugin', () => {
       const defs = tab.getSettingDefinitions();
 
       expect(Array.isArray(defs)).toBe(true);
-      expect(defs.some(d => d.control?.key === 'notifyOnMultipleMatches')).toBe(true);
-      expect(defs.some(d => d.name === 'Color UI labels')).toBe(true);
-      expect(defs.some(d => d.name === 'Color links')).toBe(true);
-      expect(defs.some(d => d.name === 'Add color mapping')).toBe(true);
+      expect(defs.some((d: any) => d.control?.key === 'notifyOnMultipleMatches')).toBe(true);
+      expect(defs.some((d: any) => d.name === 'Color UI labels')).toBe(true);
+      expect(defs.some((d: any) => d.name === 'Color links')).toBe(true);
+      expect(defs.some((d: any) => d.name === 'Add color mapping')).toBe(true);
     });
 
     it('populates containerEl when display() is called with empty mappings', () => {

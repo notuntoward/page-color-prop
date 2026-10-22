@@ -7,9 +7,17 @@ import type { PropertyColorMapping } from '../settings';
 class MinimalPlugin {
 	settings!: import('../settings').PageColorPropSettings;
 	isDarkTheme: boolean = false;
+	register = vi.fn();
+	registerEvent = vi.fn();
 	app: any = {
 		metadataCache: { getFileCache: () => null, getFirstLinkpathDest: () => null },
-		workspace: { getLeavesOfType: () => [], getActiveViewOfType: () => null }
+		workspace: {
+			on: vi.fn(),
+			onLayoutReady: vi.fn((cb: any) => cb?.()),
+			iterateAllLeaves: vi.fn(),
+			getLeavesOfType: () => [],
+			getActiveViewOfType: () => null
+		}
 	};
 }
 
@@ -247,7 +255,10 @@ describe('LinkDecorator', () => {
       },
       workspace: {
         getLeavesOfType: vi.fn(() => []),
-        getActiveViewOfType: vi.fn(() => null)
+        getActiveViewOfType: vi.fn(() => null),
+        iterateAllLeaves: vi.fn(),
+        on: vi.fn(),
+        onLayoutReady: vi.fn((cb: any) => cb?.())
       }
     };
     return plugin;

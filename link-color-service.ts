@@ -113,8 +113,12 @@ export function readThemeCssVar(colorStr: string): string | null {
 	temp.style.color = colorStr;
 	document.body.appendChild(temp);
 
-	const computed = window.getComputedStyle(temp).color;
-	document.body.removeChild(temp);
+	let computed: string;
+	try {
+		computed = window.getComputedStyle(temp).color;
+	} finally {
+		temp.remove();
+	}
 
 	const rgbMatch = computed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
 	if (rgbMatch) {

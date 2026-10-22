@@ -1,3 +1,6 @@
+import { getTabHeaderEl } from 'commons/internals';
+import { forEachWindow } from 'commons/windows';
+import { getOpenWindows } from 'commons/workspace';
 import { FileView, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import {
 	PageColorPropSettings,
@@ -28,7 +31,7 @@ export default class PageColorPropPlugin extends Plugin {
 	settings: PageColorPropSettings;
 	isDarkTheme: boolean = false;
 	private themeObserver: MutationObserver | null = null;
-	private fileExplorerObserver: MutationObserver | null = null;
+	private fileExplorerObservers: MutationObserver[] = [];
 	private multipleMatchNoticeKeys: Set<string> = new Set();
 	private pendingRetryHandles: Set<number> = new Set();
 	linkDecorator: LinkDecorator | null = null;
@@ -46,6 +49,15 @@ export default class PageColorPropPlugin extends Plugin {
 
 		this.registerEvent(
 			this.app.metadataCache.on('changed', this.onMetadataChanged.bind(this))
+		);
+
+		this.registerEvent(
+			this.app.metadataCache.on('resolved', () => {
+				this.linkDecorator?.invalidateCaches();
+				this.updateFileExplorerColors();
+				this.updateAllTabHeaderColors();
+				this.applyColorsToAllLeaves();
+			})
 		);
 
 		this.registerEvent(
@@ -82,6 +94,7 @@ export default class PageColorPropPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('layout-change', () => {
 				this.installViewObservers();
+				this.installFileExplorerObserver();
 				this.updateFileExplorerColors();
 				this.updateAllTabHeaderColors();
 			})
@@ -96,13 +109,23 @@ export default class PageColorPropPlugin extends Plugin {
 	}
 
 	private installFileExplorerObserver(): void {
-		const navContainer = document.querySelector('.nav-files-container');
-		if (!navContainer || !navContainer.instanceOf(HTMLElement)) return;
+		if (this.fileExplorerObservers?.length > 0) {
+			this.fileExplorerObservers.forEach((obs) => obs.disconnect());
+			this.fileExplorerObservers = [];
+		}
 
-		this.fileExplorerObserver = new MutationObserver(() => {
-			this.updateFileExplorerColors();
-		});
-		this.fileExplorerObserver.observe(navContainer, { childList: true, subtree: true });
+		for (const win of getOpenWindows(this.app)) {
+			const doc = win.document;
+			if (!doc) continue;
+			const navContainers = doc.querySelectorAll<HTMLElement>('.nav-files-container');
+			navContainers.forEach((navContainer) => {
+				const obs = new MutationObserver(() => {
+					this.updateFileExplorerColors();
+				});
+				obs.observe(navContainer, { childList: true, subtree: true });
+				this.fileExplorerObservers.push(obs);
+			});
+		}
 	}
 
 	onunload() {
@@ -111,9 +134,9 @@ export default class PageColorPropPlugin extends Plugin {
 		if (this.themeObserver) {
 			this.themeObserver.disconnect();
 		}
-		if (this.fileExplorerObserver) {
-			this.fileExplorerObserver.disconnect();
-			this.fileExplorerObserver = null;
+		if (this.fileExplorerObservers.length > 0) {
+			this.fileExplorerObservers.forEach((obs) => obs.disconnect());
+			this.fileExplorerObservers = [];
 		}
 		if (this.linkDecorator) {
 			this.linkDecorator.dispose();
@@ -136,17 +159,21 @@ export default class PageColorPropPlugin extends Plugin {
 			'.workspace-leaf-content[data-type="recent-files"]',
 			'.workspace-leaf-content[data-type="file-properties"]'
 		];
-		for (const sel of selectors) {
-			document.querySelectorAll(sel).forEach((node) => {
-				if (node.instanceOf(HTMLElement)) {
-					this.linkDecorator!.observeContainer(
-						node,
-						'',
-						'.tree-item-inner, .nav-file-title-content, .metadata-link-inner, .multi-select-pill-content',
-						true
-					);
-				}
-			});
+		for (const win of getOpenWindows(this.app)) {
+			const doc = win.document;
+			if (!doc) continue;
+			for (const sel of selectors) {
+				doc.querySelectorAll(sel).forEach((node) => {
+					if (node.instanceOf(HTMLElement)) {
+						this.linkDecorator!.observeContainer(
+							node,
+							'',
+							'.tree-item-inner, .nav-file-title-content, .metadata-link-inner, .multi-select-pill-content',
+							true
+						);
+					}
+				});
+			}
 		}
 	}
 
@@ -337,22 +364,26 @@ export default class PageColorPropPlugin extends Plugin {
 			attributeOldValue: true
 		};
 
-		this.themeObserver = new MutationObserver((mutations) => {
-			for (const mutation of mutations) {
-				if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
-					const wasLight = !this.isDarkTheme;
-					this.updateThemeState();
-					const isNowLight = !this.isDarkTheme;
+		forEachWindow(this, (win) => {
+			const body = win.document?.body;
+			if (!body) return;
+			const obs = new MutationObserver((mutations) => {
+				for (const mutation of mutations) {
+					if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+						const wasLight = !this.isDarkTheme;
+						this.updateThemeState();
+						const isNowLight = !this.isDarkTheme;
 
-					if (wasLight !== isNowLight) {
-						this.applyColorsToAllLeaves();
-						this.refreshLinkDecorations();
+						if (wasLight !== isNowLight) {
+							this.applyColorsToAllLeaves();
+							this.refreshLinkDecorations();
+						}
 					}
 				}
-			}
+			});
+			obs.observe(body, themeConfig);
+			return () => obs.disconnect();
 		});
-
-		this.themeObserver.observe(document.body, themeConfig);
 	}
 
 	private onActiveLeafChange(leaf: WorkspaceLeaf | null) {
@@ -360,13 +391,13 @@ export default class PageColorPropPlugin extends Plugin {
 	}
 
 	private onMetadataChanged(file: TFile) {
-		this.applyColorsToAllLeaves();
-		this.updateFileExplorerColors();
-		this.updateAllTabHeaderColors();
 		if (this.linkDecorator) {
 			this.linkDecorator.invalidateCaches();
 			this.linkDecorator.refreshAllVisible();
 		}
+		this.applyColorsToAllLeaves();
+		this.updateFileExplorerColors();
+		this.updateAllTabHeaderColors();
 	}
 
 	private onLayoutChange() {
@@ -472,13 +503,7 @@ export default class PageColorPropPlugin extends Plugin {
 	}
 
 	private getLeafTabEl(leaf: WorkspaceLeaf): HTMLElement | null {
-		try {
-			const tabEl = (leaf as any).tabHeaderEl;
-			if (!tabEl) return null;
-			return tabEl.instanceOf(HTMLElement) ? tabEl : null;
-		} catch {
-			return null;
-		}
+		return getTabHeaderEl(leaf);
 	}
 
 	private getMappingColor(mapping: PropertyColorMapping): string {
@@ -617,28 +642,34 @@ export default class PageColorPropPlugin extends Plugin {
 	}
 
 	private removeStaleStyles(protectedElements: Set<HTMLElement>, protectedTabs: Set<HTMLElement> = new Set()) {
-		document.querySelectorAll('.page-color-prop-active').forEach(el => {
-			if (el.instanceOf(HTMLElement) && !protectedElements.has(el)) {
-				el.removeClass('page-color-prop-active');
-				el.style.removeProperty('--page-color-prop-background');
-			}
-		});
+		for (const win of getOpenWindows(this.app)) {
+			const doc = win.document;
+			if (!doc) continue;
+			doc.querySelectorAll('.page-color-prop-active').forEach(el => {
+				if (el.instanceOf(HTMLElement) && !protectedElements.has(el)) {
+					el.removeClass('page-color-prop-active');
+					el.style.removeProperty('--page-color-prop-background');
+				}
+			});
 
-		document.querySelectorAll('.page-color-prop-tab').forEach(el => {
-			if (el.instanceOf(HTMLElement) && !protectedTabs.has(el)) {
-				el.removeClass('page-color-prop-tab');
-				el.style.removeProperty('--page-color-prop-tab-color');
-			}
-		});
+			doc.querySelectorAll('.page-color-prop-tab').forEach(el => {
+				if (el.instanceOf(HTMLElement) && !protectedTabs.has(el)) {
+					el.removeClass('page-color-prop-tab');
+					el.style.removeProperty('--page-color-prop-tab-color');
+				}
+			});
+		}
 	}
 
 	private removeAllStyles() {
 		this.removeStaleStyles(new Set(), new Set());
 	}
 
-	private updateFileExplorerColors(): void {
+	private updateFileExplorerColors(retriesLeft: number = 3): void {
 		const explorerLeaves = this.app.workspace.getLeavesOfType('file-explorer');
 		if (!explorerLeaves.length) return;
+
+		let hasUncachedFiles = false;
 
 		for (const leaf of explorerLeaves) {
 			const container = leaf.view?.containerEl;
@@ -652,6 +683,10 @@ export default class PageColorPropPlugin extends Plugin {
 
 				const abstractFile = this.app.vault.getAbstractFileByPath(filePath);
 				if (!abstractFile || !(abstractFile instanceof TFile)) return;
+
+				if (!this.app.metadataCache.getFileCache(abstractFile)) {
+					hasUncachedFiles = true;
+				}
 
 				const mapping = this.linkDecorator?.getMatchingMappingForFile(abstractFile);
 				const color = mapping ? this.linkDecorator?.getResolvedLinkColor(mapping, true) : null;
@@ -669,11 +704,19 @@ export default class PageColorPropPlugin extends Plugin {
 				}
 			});
 		}
+
+		if (hasUncachedFiles && retriesLeft > 0 && this.pendingRetryHandles.size === 0) {
+			const handle = window.setTimeout(() => {
+				this.pendingRetryHandles.delete(handle);
+				this.updateFileExplorerColors(retriesLeft - 1);
+			}, 250);
+			this.pendingRetryHandles.add(handle);
+		}
 	}
 
 	private updateAllTabHeaderColors(): void {
 		this.app.workspace.iterateAllLeaves((leaf) => {
-			const tabHeaderEl = (leaf as any).tabHeaderEl as HTMLElement | undefined;
+			const tabHeaderEl = getTabHeaderEl(leaf);
 			if (!tabHeaderEl) return;
 
 			const file = leaf.view instanceof FileView ? leaf.view.file : null;

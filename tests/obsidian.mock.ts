@@ -1,3 +1,4 @@
+export type SettingDefinitionItem<K extends string = string> = any;
 import { vi } from 'vitest';
 
 export const mockedNotice = vi.fn();
@@ -12,6 +13,7 @@ export class TFile {}
 export class FileView {}
 export class MarkdownView extends FileView {}
 export class Plugin {
+  register = vi.fn();
   registerEvent = vi.fn();
   registerMarkdownPostProcessor = vi.fn();
   registerEditorExtension = vi.fn();

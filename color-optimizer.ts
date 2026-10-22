@@ -160,11 +160,49 @@ export interface SingleThemeOutput {
 export class ColorMath {
 
   /** "#RRGGBB" string -> {r,g,b} 0-255 numbers. */
+  /** "#RRGGBB", "#RGB", "#RGBA", "#RRGGBBAA", or "rgb(...)" string -> {r,g,b} 0-255 numbers. */
   public static hexToRgb(hex: string): RGB {
-    const clean = hex.trim().replace(/^#/, "");
-    const full = clean.length === 3 ? clean.split("").map(c => c + c).join("") : clean;
-    const val = parseInt(full, 16);
-    return { r: (val >> 16) & 255, g: (val >> 8) & 255, b: val & 255 };
+    if (typeof hex !== 'string') {
+      throw new Error(`Invalid color input: ${String(hex)}`);
+    }
+    const trimmed = hex.trim();
+
+    // Check for rgb/rgba functional notation
+    const rgbFnMatch = trimmed.match(/^rgba?\(\s*([0-9.]+)(%?)\s*,\s*([0-9.]+)(%?)\s*,\s*([0-9.]+)(%?)/i);
+    if (rgbFnMatch) {
+      const parseChannel = (val: string, isPct: string) => {
+        const num = parseFloat(val);
+        const scaled = isPct ? (num / 100) * 255 : num;
+        return Math.max(0, Math.min(255, Math.round(scaled)));
+      };
+      return {
+        r: parseChannel(rgbFnMatch[1], rgbFnMatch[2]),
+        g: parseChannel(rgbFnMatch[3], rgbFnMatch[4]),
+        b: parseChannel(rgbFnMatch[5], rgbFnMatch[6])
+      };
+    }
+
+    const clean = trimmed.replace(/^#/, '');
+    if (!/^[0-9A-Fa-f]+$/.test(clean)) {
+      throw new Error(`Invalid hex color: ${hex}`);
+    }
+
+    let fullHex = clean;
+    if (clean.length === 3 || clean.length === 4) {
+      // #rgb or #rgba -> expand to #rrggbb
+      fullHex = clean[0] + clean[0] + clean[1] + clean[1] + clean[2] + clean[2];
+    } else if (clean.length === 6 || clean.length === 8) {
+      fullHex = clean.slice(0, 6);
+    } else {
+      throw new Error(`Invalid hex length (${clean.length}): ${hex}`);
+    }
+
+    const val = parseInt(fullHex, 16);
+    return {
+      r: (val >> 16) & 255,
+      g: (val >> 8) & 255,
+      b: val & 255
+    };
   }
 
   /** {r,g,b} 0-255 numbers -> "#RRGGBB" string. Clamps out-of-range values

@@ -54,7 +54,7 @@ export default [
 		}
 	},
 	{
-		files: ['tests/**/*.ts', 'vitest.config.ts'],
+		files: ['tests/**/*.ts', 'vitest.config.mts'],
 		languageOptions: {
 			parser: tseslint.parser,
 			parserOptions: {

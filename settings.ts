@@ -1,4 +1,5 @@
-import { App, Modal, PluginSettingTab, setIcon, Setting } from 'obsidian';
+import { App, Modal, PluginSettingTab, setIcon, Setting, type SettingDefinitionItem } from 'obsidian';
+import { ownerWindow, requestFrameIn } from 'commons/windows';
 import type PageColorPropPlugin from './main';
 import { DEFAULT_LINK_TUNING, ColorMath, type LinkColorTuning } from './color-optimizer';
 import { computeAutoRuleColors, readBothThemeVars, readThemeCssVar, type ThemeCssVars } from './link-color-service';
@@ -45,28 +46,7 @@ export const DEFAULT_SETTINGS: PageColorPropSettings = {
   experimentalLinkTuning: { ...DEFAULT_LINK_TUNING }
 };
 
-export interface SettingDefinitionControl {
-  type: 'toggle' | 'text' | 'textarea' | 'number' | 'slider' | 'dropdown' | 'file' | 'folder' | 'color';
-  key: keyof PageColorPropSettings;
-  defaultValue?: any;
-  options?: Record<string, string>;
-  placeholder?: string;
-  min?: number;
-  max?: number;
-  step?: number;
-  validate?: (value: any) => string | void | Promise<string | void>;
-  disabled?: boolean | (() => boolean);
-}
 
-export interface SettingDefinitionItem {
-  name?: string;
-  desc?: string | DocumentFragment;
-  control?: SettingDefinitionControl;
-  render?: (setting: Setting) => void | (() => void);
-  action?: (index: number) => void;
-  visible?: boolean | (() => boolean);
-  searchable?: boolean;
-}
 
 export class PageColorPropSettingTab extends PluginSettingTab {
   plugin: PageColorPropPlugin;
@@ -74,6 +54,15 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   constructor(app: App, plugin: PageColorPropPlugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  override getControlValue(key: string): unknown {
+    return (this.plugin.settings as any)[key];
+  }
+
+  override async setControlValue(key: string, value: unknown): Promise<void> {
+    (this.plugin.settings as any)[key] = value;
+    await this.plugin.saveSettings();
   }
 
   public refreshUI(): void {
@@ -239,22 +228,23 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     for (const def of this.getSettingDefinitions()) {
+      const item = def as any;
       const setting = new Setting(containerEl);
-      if (def.name) setting.setName(def.name);
-      if (def.desc) setting.setDesc(def.desc);
+      if (item.name) setting.setName(item.name);
+      if (item.desc) setting.setDesc(item.desc);
 
-      if (def.control) {
-        if (def.control.type === 'toggle') {
+      if (item.control) {
+        if (item.control.type === 'toggle') {
           setting.addToggle(toggle => {
-            toggle.setValue(Boolean(this.plugin.settings[def.control!.key]));
+            toggle.setValue(Boolean((this.plugin.settings as any)[item.control.key]));
             toggle.onChange(async val => {
-              (this.plugin.settings as any)[def.control!.key] = val;
+              (this.plugin.settings as any)[item.control.key] = val;
               await this.plugin.saveSettings();
             });
           });
         }
-      } else if (def.render) {
-        def.render(setting);
+      } else if (item.render) {
+        item.render(setting);
       }
     }
   }
@@ -1244,14 +1234,15 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       body.classList.add(wantDark ? 'theme-dark' : 'theme-light');
     }
 
-    const hex = readThemeCssVar(colorStr);
-
-    if (needsSwitch) {
-      body.classList.remove('theme-light', 'theme-dark');
-      body.classList.add(isCurrentlyDark ? 'theme-dark' : 'theme-light');
+    try {
+      const hex = readThemeCssVar(colorStr);
+      return hex ?? '#808080';
+    } finally {
+      if (needsSwitch) {
+        body.classList.remove('theme-light', 'theme-dark');
+        body.classList.add(isCurrentlyDark ? 'theme-dark' : 'theme-light');
+      }
     }
-
-    return hex ?? '#808080';
   }
 
   /** Open a hidden color-picker input anchored to a visible element so the
@@ -1276,6 +1267,19 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       pointerEvents: input.style.pointerEvents
     };
 
+    const restoreStyles = () => {
+      input.style.position = prevStyles.position;
+      input.style.left = prevStyles.left;
+      input.style.top = prevStyles.top;
+      input.style.width = prevStyles.width;
+      input.style.height = prevStyles.height;
+      input.style.zIndex = prevStyles.zIndex;
+      input.style.padding = prevStyles.padding;
+      input.style.border = prevStyles.border;
+      input.style.opacity = prevStyles.opacity;
+      input.style.pointerEvents = prevStyles.pointerEvents;
+    };
+
     input.style.position = 'fixed';
     input.style.left = `${rect.left}px`;
     input.style.top = `${rect.top}px`;
@@ -1287,23 +1291,20 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     input.style.opacity = '0';
     input.style.pointerEvents = 'auto';
 
-    if ('showPicker' in input) {
-      (input as any).showPicker();
-    } else {
-      (input as any).click();
+    try {
+      if ('showPicker' in input) {
+        (input as any).showPicker();
+      } else {
+        (input as any).click();
+      }
+    } catch (err) {
+      restoreStyles();
+      throw err;
     }
 
-    window.requestAnimationFrame(() => {
-      input.style.position = prevStyles.position;
-      input.style.left = prevStyles.left;
-      input.style.top = prevStyles.top;
-      input.style.width = prevStyles.width;
-      input.style.height = prevStyles.height;
-      input.style.zIndex = prevStyles.zIndex;
-      input.style.padding = prevStyles.padding;
-      input.style.border = prevStyles.border;
-      input.style.opacity = prevStyles.opacity;
-      input.style.pointerEvents = prevStyles.pointerEvents;
+    const win = ownerWindow(input) ?? window;
+    requestFrameIn(win, () => {
+      restoreStyles();
     });
   }
 }

@@ -1,3 +1,5 @@
+import { forEachWindow } from 'commons/windows';
+import { getOpenWindows } from 'commons/workspace';
 // ============================================================================
 // link-decorator.ts
 // ============================================================================
@@ -99,7 +101,14 @@ export class LinkDecorator {
 		}
 
 		const fileCache = this.plugin.app.metadataCache.getFileCache(file);
-		const frontmatter = fileCache?.frontmatter;
+		if (!fileCache) {
+			// Metadata cache is not populated yet for this file (e.g. background indexing
+			// is still running on startup). Do NOT cache a negative match, so future passes
+			// can re-check once metadata resolves.
+			return null;
+		}
+
+		const frontmatter = fileCache.frontmatter;
 		if (!frontmatter) {
 			this.matchCache.set(file.path, { index: null, version: this.linkStyleVersion });
 			return null;
@@ -340,26 +349,30 @@ export class LinkDecorator {
 	 * additions and decorate anything new.
 	 */
 	public observeDocument(isUiLabel = false): void {
-		if (this.documentObserver) return;
-		this.documentObserver = new MutationObserver((mutations) => {
-			for (const m of mutations) {
-				m.addedNodes.forEach((node) => {
-					if (!node.instanceOf(HTMLElement)) return;
-					DEFAULT_CONTAINER_SELECTORS.forEach((sel) => {
-						if (node.matches(sel)) {
-							// Suggestion rows resolve against "" (root) source path.
-							this.decorateLink(node, '', undefined, isUiLabel);
-						}
-						node.querySelectorAll(sel).forEach((child) => {
-							if (child.instanceOf(HTMLElement)) {
-								this.decorateLink(child, '', undefined, isUiLabel);
+		forEachWindow(this.plugin, (win) => {
+			const body = win.document?.body;
+			if (!body) return;
+			const obs = new MutationObserver((mutations) => {
+				for (const m of mutations) {
+					m.addedNodes.forEach((node) => {
+						if (!node.instanceOf(HTMLElement)) return;
+						DEFAULT_CONTAINER_SELECTORS.forEach((sel) => {
+							if (node.matches(sel)) {
+								// Suggestion rows resolve against "" (root) source path.
+								this.decorateLink(node, '', undefined, isUiLabel);
 							}
+							node.querySelectorAll(sel).forEach((child) => {
+								if (child.instanceOf(HTMLElement)) {
+									this.decorateLink(child, '', undefined, isUiLabel);
+								}
+							});
 						});
 					});
-				});
-			}
+				}
+			});
+			obs.observe(body, { childList: true, subtree: true });
+			return () => obs.disconnect();
 		});
-		this.documentObserver.observe(document.body, { childList: true, subtree: true });
 	}
 
 	/** Decorate every already-rendered link in the workspace. */
@@ -381,11 +394,13 @@ export class LinkDecorator {
 			this.decorateLinksInContainer(container, '', '.tree-item-inner, .nav-file-title-content, .metadata-link-inner, .multi-select-pill-content', true);
 		});
 
-		// Floating UI elements (suggestions, etc.) in document.body.
-		this.decorateLinksInContainer(document.body, '', '.suggestion-title, .suggestion-note', true);
-		// Also catch any stray internal links that may have landed in the body
-		// outside of a known markdown view.
-		this.decorateLinksInContainer(document.body, '', 'a.internal-link');
+		// Floating UI elements (suggestions, etc.) in every window's document body.
+		for (const win of getOpenWindows(this.app)) {
+			const body = win.document?.body;
+			if (!body) continue;
+			this.decorateLinksInContainer(body, '', '.suggestion-title, .suggestion-note', true);
+			this.decorateLinksInContainer(body, '', 'a.internal-link');
+		}
 	}
 
 	/** Disconnect every observer, clear caches, and remove our decorations
@@ -398,11 +413,15 @@ export class LinkDecorator {
 			this.documentObserver = null;
 		}
 		// Remove our decorations from any element still carrying them.
-		document.querySelectorAll(`.${PAGE_COLOR_PROP_LINK_CLASS}`).forEach((el) => {
-			if (el.instanceOf(HTMLElement)) {
-				this.clearDecoration(el);
-			}
-		});
+		for (const win of getOpenWindows(this.app)) {
+			const doc = win.document;
+			if (!doc) continue;
+			doc.querySelectorAll(`.${PAGE_COLOR_PROP_LINK_CLASS}`).forEach((el) => {
+				if (el.instanceOf(HTMLElement)) {
+					this.clearDecoration(el);
+				}
+			});
+		}
 		this.matchCache.clear();
 		this.themeVars = null;
 	}

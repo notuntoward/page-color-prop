@@ -8,11 +8,28 @@
     "allowJs": true,
     "allowImportingTsExtensions": true,
     "noImplicitAny": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "importHelpers": true,
     "isolatedModules": true,
     "strictNullChecks": true,
-    "lib": ["DOM", "ES6"]
+    "lib": [
+      "DOM",
+      "ES6"
+    ],
+    "paths": {
+      "obsidian": [
+        "./node_modules/obsidian"
+      ],
+      "commons/*": [
+        "../obsidian-commons/src/*/index.ts"
+      ],
+      "commons/internals": [
+        "../obsidian-commons/src/internals.ts"
+      ]
+    }
   },
-  "include": ["**/*.ts"]
+  "include": [
+    "**/*.ts",
+    "*.mts"
+  ]
 }
