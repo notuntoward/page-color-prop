@@ -18,6 +18,17 @@
   color: var(--page-color, var(--page-color-prop-tab-color)) !important;
 }
 
+.has-page-color {
+  color: var(--page-color, var(--page-color-prop-link-color)) !important;
+}
+
+.file-palette-suggestion-name.has-page-color,
+.file-palette-suggestion-name.page-color-prop-link,
+.suggestion-item.has-page-color .suggestion-title,
+.suggestion-item.has-page-color .file-palette-suggestion-name {
+  color: var(--page-color, var(--page-color-prop-link-color)) !important;
+}
+
 /* Link decoration: every link whose destination note matches a Page
    Color Prop rule is given this class plus an inline --page-color-prop-
    link-color and a data-page-color-prop-link-rule attribute by the

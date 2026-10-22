@@ -1,3 +1,4 @@
+import { TFile } from './obsidian.mock';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ColorMath } from '../color-optimizer';
 import { PageColorPropSettingTab } from '../settings';
@@ -279,6 +280,54 @@ describe('Commons Adoption and Hardened Invariants', () => {
       expect(plugin.updateFileExplorerColors).toHaveBeenCalledTimes(1);
       expect(plugin.updateAllTabHeaderColors).toHaveBeenCalledTimes(1);
       expect(plugin.applyColorsToAllLeaves).toHaveBeenCalledTimes(1);
+    });
+  });
+  describe('Public API for external plugins and suggestion coloring', () => {
+    it('exposes getFileColor and applyFileColor on the plugin', () => {
+      const plugin = Object.create(PageColorPropPlugin.prototype) as PageColorPropPlugin;
+      const testFile = Object.assign(new TFile(), { path: 'Notes/Test.md' });
+      (plugin as any).app = {
+        vault: {
+          getAbstractFileByPath: vi.fn((p: string) => (p === 'Notes/Test.md' ? testFile : null)),
+        },
+        metadataCache: {
+          getFirstLinkpathDest: vi.fn((p: string) => (p === 'Notes/Test.md' ? testFile : null)),
+        },
+      };
+      (plugin as any).linkDecorator = {
+        getMatchingMappingForFile: vi.fn((f: any) => (f.path === 'Notes/Test.md' ? { id: 'm1' } : null)),
+        getResolvedLinkColor: vi.fn((_mapping: any, _isUi: boolean) => '#0e9afd'),
+      };
+
+      // By file object
+      expect(plugin.getFileColor(testFile as any)).toBe('#0e9afd');
+      // By path string
+      expect(plugin.getFileColor('Notes/Test.md')).toBe('#0e9afd');
+      // Missing file
+      expect(plugin.getFileColor('Unknown.md')).toBeNull();
+
+      // applyFileColor applies styles and classes
+      const el = document.createElement('div');
+      const applied = plugin.applyFileColor(el, testFile as any);
+      expect(applied).toBe('#0e9afd');
+      expect(el.style.getPropertyValue('--page-color')).toBe('#0e9afd');
+      expect(el.style.getPropertyValue('--page-color-prop-link-color')).toBe('#0e9afd');
+      expect(el.style.color).toBe('rgb(14, 154, 253)');
+      expect(el.classList.contains('has-page-color')).toBe(true);
+      expect(el.classList.contains('page-color-prop-link')).toBe(true);
+
+      // applyFileColor clears styles when file has no color
+      plugin.applyFileColor(el, 'Unknown.md');
+      expect(el.style.getPropertyValue('--page-color')).toBe('');
+      expect(el.style.getPropertyValue('--page-color-prop-link-color')).toBe('');
+      expect(el.classList.contains('has-page-color')).toBe(false);
+      expect(el.classList.contains('page-color-prop-link')).toBe(false);
+    });
+
+    it('includes file-palette and suggestion selectors in DEFAULT_CONTAINER_SELECTORS', async () => {
+      const { DEFAULT_CONTAINER_SELECTORS } = await import('../link-decorator');
+      expect(DEFAULT_CONTAINER_SELECTORS).toContain('.file-palette-suggestion-name');
+      expect(DEFAULT_CONTAINER_SELECTORS).toContain('.has-page-color');
     });
   });
 });

@@ -747,6 +747,51 @@ export default class PageColorPropPlugin extends Plugin {
 		el.removeClass('has-page-color');
 	}
 
+	/**
+	 * Returns the resolved color for a file or path, or null if no mapping matches.
+	 */
+	public getFileColor(file: TFile | string): string | null {
+		let tfile: TFile | null = null;
+		if (typeof file === 'string') {
+			const abs = this.app.vault.getAbstractFileByPath(file);
+			if (abs instanceof TFile) {
+				tfile = abs;
+			} else {
+				const dest = this.app.metadataCache.getFirstLinkpathDest(file, '');
+				if (dest instanceof TFile) {
+					tfile = dest;
+				}
+			}
+		} else if (file instanceof TFile) {
+			tfile = file;
+		}
+		if (!tfile) return null;
+		const mapping = this.linkDecorator?.getMatchingMappingForFile(tfile);
+		return (mapping && this.linkDecorator ? this.linkDecorator.getResolvedLinkColor(mapping, true) : null) ?? null;
+	}
+
+	/**
+	 * Applies the resolved page color of a file to an element and returns the color (or null).
+	 */
+	public applyFileColor(el: HTMLElement, file: TFile | string): string | null {
+		const color = this.getFileColor(file);
+		if (color) {
+			el.style.setProperty('--page-color-prop-link-color', color);
+			el.style.setProperty('--page-color', color);
+			el.style.color = color;
+			el.addClass('page-color-prop-link');
+			el.addClass('has-page-color');
+			return color;
+		} else {
+			el.style.removeProperty('--page-color-prop-link-color');
+			el.style.removeProperty('--page-color');
+			el.style.removeProperty('color');
+			el.removeClass('page-color-prop-link');
+			el.removeClass('has-page-color');
+			return null;
+		}
+	}
+
 	isValidColor(color: string): boolean {
 		if (!color || typeof color !== 'string') {
 			return false;

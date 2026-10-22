@@ -38,14 +38,16 @@ const DATA_ATTR = 'data-page-color-prop-link-rule';
 const CSS_VAR = '--page-color-prop-link-color';
 
 /** Selectors that contain a navigable link to a vault note. */
-const DEFAULT_CONTAINER_SELECTORS = [
+export const DEFAULT_CONTAINER_SELECTORS = [
 	'a.internal-link',
 	'.tree-item-inner',
 	'.nav-file-title-content',
 	'.metadata-link-inner',
 	'.multi-select-pill-content',
 	'.suggestion-title',
-	'.suggestion-note'
+	'.suggestion-note',
+	'.file-palette-suggestion-name',
+	'.has-page-color'
 ];
 
 export class LinkDecorator {
