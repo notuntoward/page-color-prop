@@ -11,7 +11,7 @@ import {
 } from './settings';
 import { DEFAULT_LINK_TUNING } from './color-optimizer';
 import { LinkDecorator } from './link-decorator';
-import { computeAutoRuleColors, findMatchingColorMappings } from './link-color-service';
+import { computeAutoRuleColors, findMatchingColorMappings, getRuleMatchProperties } from './link-color-service';
 import { buildPageColorPropLivePreviewExtension, forceRecomputeEffect } from './live-preview-links';
 
 type FrontmatterValue = string | number | boolean | null | undefined | FrontmatterValue[];
@@ -445,14 +445,7 @@ export default class PageColorPropPlugin extends Plugin {
 					return;
 				}
 
-				// metadata exists but has no frontmatter: the file genuinely has no
-				// frontmatter, so remove any stale color.
-				if (!metadata.frontmatter) {
-					this.removeColorsFromLeaf(leaf);
-					return;
-				}
-
-				const matchResult = this.findMatchingColorMappings(metadata.frontmatter);
+				const matchResult = this.findMatchingColorMappings(getRuleMatchProperties(metadata));
 				const colorMapping = matchResult.selected?.mapping;
 
 				if (colorMapping) {

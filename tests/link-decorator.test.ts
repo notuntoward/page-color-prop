@@ -282,6 +282,16 @@ describe('LinkDecorator', () => {
     expect(result?.value).toBe('ai-generated');
   });
 
+  it('matches Obsidian tags when the file has no frontmatter', () => {
+    const plugin = makePlugin();
+    plugin.app.metadataCache.getFileCache.mockReturnValue({
+      tags: [{ tag: '#ai-generated' }]
+    });
+    const decorator = new LinkDecorator(plugin);
+
+    expect(decorator.getMatchingMappingForFile({ path: 'note.md' } as any)?.value).toBe('ai-generated');
+  });
+
   it('caches the mapping result by file path', () => {
     const plugin = makePlugin();
     plugin.app.metadataCache.getFileCache.mockReturnValue({

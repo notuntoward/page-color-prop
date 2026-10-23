@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import PageColorPropPlugin from '../main.ts';
 import { PageColorPropSettingTab, type PageColorPropSettings, type PropertyColorMapping } from '../settings';
-import { MarkdownView, mockedNotice, TFile } from './obsidian.mock';
+import { AbstractInputSuggest, MarkdownView, mockedNotice, Setting, TFile } from './obsidian.mock';
 
 
 function mapping(overrides: Partial<PropertyColorMapping> = {}): PropertyColorMapping {
@@ -48,7 +48,8 @@ function createPlugin(overrides: Partial<PageColorPropSettings> = {}) {
       getFileCache: vi.fn()
     },
     vault: {
-      getAbstractFileByPath: vi.fn(() => null)
+      getAbstractFileByPath: vi.fn(() => null),
+      getMarkdownFiles: vi.fn(() => [])
     }
   };
   plugin.loadData = vi.fn();
@@ -80,6 +81,7 @@ function createLeaf(file?: any): TestLeaf {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  AbstractInputSuggest.instances.length = 0;
   document.body.classList.remove('theme-dark');
   document.body.innerHTML = '';
   Object.defineProperty(globalThis, 'CSS', {
@@ -344,6 +346,23 @@ describe('PageColorPropPlugin', () => {
     expect(leaf.view.containerEl.classList.contains('page-color-prop-active')).toBe(true);
     expect(leaf.view.containerEl.style.getPropertyValue('--page-color-prop-background')).toBe('#4e66d0');
     expect(staleElement.classList.contains('page-color-prop-active')).toBe(false);
+  });
+
+  it('applies page colors from Obsidian tags even without frontmatter', () => {
+    const file = { path: 'Politics/ai-generated-note.md', basename: 'ai-generated-note' };
+    const leaf = createLeaf(file);
+    const plugin = createPlugin({
+      colorMappings: [mapping({ matchType: 'contains', isAutoLight: false, colorLight: '#4e66d0' })]
+    });
+    plugin.app.workspace.getLeavesOfType.mockReturnValue([leaf]);
+    plugin.app.metadataCache.getFileCache.mockReturnValue({
+      tags: [{ tag: '#ai-generated' }, { tag: '#research' }]
+    });
+
+    plugin.applyColorsToAllLeaves();
+
+    expect(leaf.view.containerEl.classList.contains('page-color-prop-active')).toBe(true);
+    expect(leaf.view.containerEl.style.getPropertyValue('--page-color-prop-background')).toBe('#4e66d0');
   });
 
   it('applies the matching link color to a note tab when tab coloring is enabled', () => {
@@ -884,7 +903,7 @@ describe('PageColorPropPlugin', () => {
   describe('PageColorPropSettingTab', () => {
     it('returns declarative setting definitions', () => {
       const plugin = createPlugin();
-      const tab = new PageColorPropSettingTab({} as any, plugin);
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
       const defs = tab.getSettingDefinitions();
 
       expect(Array.isArray(defs)).toBe(true);
@@ -900,19 +919,25 @@ describe('PageColorPropPlugin', () => {
       plugin.applyColorsToAllLeaves = vi.fn();
       plugin.refreshLinkDecorations = vi.fn();
 
-      const tab = new PageColorPropSettingTab({} as any, plugin);
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
       tab.display();
 
       expect(tab.containerEl.childNodes.length).toBeGreaterThan(0);
     });
 
-    it('populates containerEl when display() is called with color mappings', () => {
+    it('renders independent property pickers for every color mapping', () => {
       const plugin = createPlugin();
+      const file = { path: 'note.md' };
+      plugin.app.vault.getMarkdownFiles.mockReturnValue([file]);
+      plugin.app.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { tags: ['ai-generated'], category: ['journal', 'work'] },
+        tags: [{ tag: '#ai-generated' }, { tag: '#research' }]
+      });
       plugin.settings.colorMappings.push({
         id: 'rule-1',
         baseColor: '#4f8cc9',
-        property: 'status',
-        value: 'done',
+        property: 'category',
+        value: 'journal',
         colorLight: '#ffffff',
         colorDark: '#000000',
         isAutoLight: true,
@@ -927,10 +952,243 @@ describe('PageColorPropPlugin', () => {
       plugin.applyColorsToAllLeaves = vi.fn();
       plugin.refreshLinkDecorations = vi.fn();
 
-      const tab = new PageColorPropSettingTab({} as any, plugin);
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
       tab.display();
 
-      expect(tab.containerEl.childNodes.length).toBeGreaterThan(0);
+      const cards = Array.from(tab.containerEl.querySelectorAll('.page-color-prop-mapping-card'));
+      expect(cards).toHaveLength(2);
+      expect(cards.map(card => Array.from(card.querySelectorAll('.commons-property-picker-chip > span'))
+        .map(label => label.textContent))).toEqual([
+        ['tags', 'ai-generated'],
+        ['category', 'journal']
+      ]);
+
+      const firstValueInput = cards[0].querySelectorAll<HTMLInputElement>('.commons-property-picker-input')[1];
+      const secondValueInput = cards[1].querySelectorAll<HTMLInputElement>('.commons-property-picker-input')[1];
+      const firstValueSuggest = AbstractInputSuggest.instances.find(suggest => suggest.inputEl === firstValueInput)!;
+      const secondValueSuggest = AbstractInputSuggest.instances.find(suggest => suggest.inputEl === secondValueInput)!;
+      expect(firstValueSuggest.suggestions('').map((option: any) => option.value)).toContain('research');
+      expect(secondValueSuggest.suggestions('').map((option: any) => option.value)).toContain('work');
+      expect(secondValueSuggest.suggestions('').map((option: any) => option.value)).not.toContain('research');
+
+      cards[0].querySelector<HTMLButtonElement>('button[aria-label="Remove tags"]')!.click();
+      expect(plugin.settings.colorMappings[0].property).toBe('');
+      expect(plugin.settings.colorMappings[1].property).toBe('category');
+      tab.onunload();
+    });
+
+    it('renders editable property and value inputs for a blank mapping', () => {
+      const plugin = createPlugin();
+      plugin.settings.colorMappings = [mapping({ property: '', value: '' })];
+      plugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: {} });
+
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      tab.display();
+
+      const card = tab.containerEl.querySelector('.page-color-prop-mapping-card');
+      const inputs = Array.from(card!.querySelectorAll<HTMLInputElement>('.commons-property-picker-input'));
+      expect(inputs).toHaveLength(2);
+      expect(inputs.map(input => input.placeholder)).toEqual([
+        'Choose or type a property',
+        'Choose or type a value'
+      ]);
+      expect(tab.containerEl.querySelectorAll('.page-color-prop-block-setting.setting-item')).toHaveLength(0);
+      tab.onunload();
+    });
+    it('keeps declarative mapping rows attached while rendering a rule', () => {
+      const plugin = createPlugin();
+      plugin.settings.colorMappings = [mapping()];
+      plugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: {} });
+
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      const definitions = tab.getSettingDefinitions();
+      const mappingDefinition = definitions.filter((definition: any) => !definition.name && definition.render)[1] as any;
+      const setting = new Setting(tab.containerEl);
+      const cleanup = mappingDefinition.render(setting, {} as any);
+
+      expect(setting.settingEl.parentElement).toBe(tab.containerEl);
+      expect(setting.settingEl.querySelector('.page-color-prop-mapping-card')).not.toBeNull();
+      cleanup?.();
+    });
+
+    it('renders a rule form after Add new mapping is activated', async () => {
+      const plugin = createPlugin({ colorMappings: [] });
+      plugin.saveSettings = vi.fn().mockResolvedValue(undefined);
+      plugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: {} });
+
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      tab.display();
+
+      let onAdd: (() => Promise<void>) | undefined;
+      const addDefinition = tab.getSettingDefinitions().find((definition: any) => definition.name === 'Add color mapping') as any;
+      addDefinition.render({
+        addButton: (callback: (button: any) => void) => {
+          const button = {
+            setButtonText() { return this; },
+            setCta() { return this; },
+            onClick(handler: () => Promise<void>) { onAdd = handler; return this; }
+          };
+          callback(button);
+        }
+      }, {} as any);
+
+      expect(onAdd).toBeDefined();
+      await onAdd!();
+
+      expect(plugin.settings.colorMappings).toHaveLength(1);
+      const ruleCard = tab.containerEl.querySelector('.page-color-prop-mapping-card');
+      expect(ruleCard).not.toBeNull();
+      expect(ruleCard?.closest('.page-color-prop-block-setting-row')).not.toBeNull();
+      expect(tab.containerEl.querySelectorAll('.commons-property-picker-input')).toHaveLength(2);
+      tab.onunload();
+    });
+    it('cleans mapping pickers and removes stale rule UI when mappings are cleared', () => {
+      const plugin = createPlugin();
+      plugin.settings.colorMappings = [mapping()];
+      plugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: {} });
+
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      tab.display();
+
+      const propertyInput = tab.containerEl.querySelector<HTMLInputElement>('.commons-property-picker-input')!;
+      const propertySuggest = AbstractInputSuggest.instances.find(suggest => suggest.inputEl === propertyInput)!;
+      const closeCalls = propertySuggest.close.mock.calls.length;
+      expect(tab.containerEl.querySelectorAll('.page-color-prop-mapping-card')).toHaveLength(1);
+
+      plugin.settings.colorMappings = [];
+      tab.refreshUI();
+
+      expect(propertySuggest.close).toHaveBeenCalledTimes(closeCalls + 1);
+      expect(tab.containerEl.querySelectorAll('.page-color-prop-mapping-card')).toHaveLength(0);
+      expect(tab.containerEl.querySelectorAll('.page-color-prop-rule-priority-note')).toHaveLength(0);
+      expect(tab.containerEl.querySelectorAll('.page-color-prop-group-heading')).toHaveLength(0);
+      expect(tab.containerEl.querySelectorAll('.page-color-prop-empty-state')).toHaveLength(1);
+      tab.onunload();
+    });
+
+    it('refreshes property and value suggestions after the vault metadata resolves', () => {
+      const plugin = createPlugin();
+      const file = { path: 'note.md' };
+      plugin.app.vault.getMarkdownFiles.mockReturnValue([file]);
+      plugin.app.metadataCache.getFileCache.mockReturnValue(null);
+      let resolvedCallback: (() => void) | undefined;
+      plugin.app.metadataCache.on = vi.fn((eventName, callback) => {
+        if (eventName === 'resolved') resolvedCallback = callback;
+        return {} as any;
+      });
+
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      tab.display();
+      const [propertyInput, valueInput] = Array.from(
+        tab.containerEl.querySelectorAll<HTMLInputElement>('.commons-property-picker-input')
+      );
+      const propertySuggest = AbstractInputSuggest.instances.find(suggest => suggest.inputEl === propertyInput)!;
+      const valueSuggest = AbstractInputSuggest.instances.find(suggest => suggest.inputEl === valueInput)!;
+
+      expect(propertySuggest.suggestions('polit').map((option: any) => option.value)).not.toContain('politics');
+      expect(valueSuggest.suggestions('polit').map((option: any) => option.value)).not.toContain('politics');
+
+      plugin.app.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { politics: 'yes', tags: ['politics'] },
+        tags: [{ tag: '#politics' }]
+      });
+      resolvedCallback?.();
+
+      expect(propertySuggest.suggestions('polit').map((option: any) => option.value)).toContain('politics');
+      expect(valueSuggest.suggestions('polit').map((option: any) => option.value)).toContain('politics');
+      tab.onunload();
+    });
+
+    it('refreshes selected-value status when the property or vault metadata changes', () => {
+      const plugin = createPlugin();
+      const file = { path: 'note.md' };
+      plugin.app.vault.getMarkdownFiles.mockReturnValue([file]);
+      plugin.app.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { tags: ['ai-generated'], category: ['journal'] },
+        tags: [{ tag: '#ai-generated' }]
+      });
+      let resolvedCallback: (() => void) | undefined;
+      plugin.app.metadataCache.on = vi.fn((_eventName, callback) => {
+        resolvedCallback = callback;
+        return {} as any;
+      });
+      plugin.settings.colorMappings = [mapping({ property: 'tags', value: 'ai-generated' })];
+
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      tab.display();
+      const [propertyInput, valueInput] = Array.from(
+        tab.containerEl.querySelectorAll<HTMLInputElement>('.commons-property-picker-input')
+      );
+      const propertySuggest = AbstractInputSuggest.instances.find(suggest => suggest.inputEl === propertyInput)!;
+      const valueChip = () => tab.containerEl.querySelector<HTMLElement>('.page-color-prop-mapping-card .commons-property-picker-chip[data-entry="new"]');
+      const status = () => valueInput.closest<HTMLElement>('.commons-property-picker')?.querySelector<HTMLElement>('.commons-property-picker-status');
+
+      expect(valueChip()).toBeNull();
+      propertyInput.value = 'category';
+      propertyInput.dispatchEvent(new Event('input', { bubbles: true }));
+      const category = propertySuggest.suggestions().find((option: any) => option.value === 'category');
+      propertySuggest.select(category);
+
+      expect(valueChip()?.textContent).toContain('ai-generated');
+      expect(status()?.textContent).toContain('for "category"');
+
+      plugin.app.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { tags: ['ai-generated'], category: ['ai-generated', 'journal'] },
+        tags: [{ tag: '#ai-generated' }]
+      });
+      resolvedCallback?.();
+
+      expect(valueChip()).toBeNull();
+      expect(status()?.hidden).toBe(true);
+      tab.onunload();
+    });
+    it('suggests vault properties and values in color mapping rules', () => {
+      const plugin = createPlugin();
+      plugin.saveSettings = vi.fn();
+      plugin.applyColorsToAllLeaves = vi.fn();
+      plugin.refreshLinkDecorations = vi.fn();
+      const file = { path: 'note.md' };
+      plugin.app.vault.getMarkdownFiles.mockReturnValue([file]);
+      plugin.app.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { tags: ['ai-generated'], category: ['journal', 'work'] },
+        tags: [{ tag: '#ai-generated' }, { tag: '#research' }]
+      });
+
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      tab.display();
+      const [propertyInput, valueInput] = Array.from(
+        tab.containerEl.querySelectorAll<HTMLInputElement>('.commons-property-picker-input')
+      );
+      const propertySuggest = AbstractInputSuggest.instances.find(suggest => suggest.inputEl === propertyInput)!;
+      const valueSuggest = AbstractInputSuggest.instances.find(suggest => suggest.inputEl === valueInput)!;
+
+      expect(tab.containerEl.querySelectorAll('.commons-property-picker-chip')).toHaveLength(2);
+
+      expect(valueSuggest.suggestions('').map((option: any) => option.value)).toContain('research');
+
+      propertyInput.value = 'category';
+      propertyInput.dispatchEvent(new Event('input', { bubbles: true }));
+      const category = propertySuggest.suggestions().find((option: any) => option.value === 'category');
+      propertySuggest.select(category);
+      expect(plugin.settings.colorMappings[0].property).toBe('category');
+      expect(plugin.applyColorsToAllLeaves).toHaveBeenCalledTimes(1);
+      expect(plugin.refreshLinkDecorations).toHaveBeenCalledTimes(1);
+
+      valueInput.value = 'work';
+      valueInput.dispatchEvent(new Event('input', { bubbles: true }));
+      const work = valueSuggest.suggestions().find((option: any) => option.value === 'work');
+      expect(work).toBeDefined();
+      valueSuggest.select(work);
+
+      expect(plugin.settings.colorMappings[0].value).toBe('work');
+      expect(plugin.applyColorsToAllLeaves).toHaveBeenCalledTimes(2);
+      expect(plugin.refreshLinkDecorations).toHaveBeenCalledTimes(2);
+      expect(tab.containerEl.querySelector('.page-color-prop-rule-summary')?.textContent).toBe('category contains work');
+
+      const closeCalls = propertySuggest.close.mock.calls.length;
+      tab.refreshUI();
+      expect(propertySuggest.close).toHaveBeenCalledTimes(closeCalls + 1);
+      tab.onunload();
     });
   });
 });

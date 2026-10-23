@@ -29,6 +29,7 @@ import type { PropertyColorMapping } from './settings';
 import {
 	computeAutoRuleColors,
 	findMatchingColorMappings,
+	getRuleMatchProperties,
 	readBothThemeVars,
 	type ThemeCssVars
 } from './link-color-service';
@@ -110,13 +111,10 @@ export class LinkDecorator {
 			return null;
 		}
 
-		const frontmatter = fileCache.frontmatter;
-		if (!frontmatter) {
-			this.matchCache.set(file.path, { index: null, version: this.linkStyleVersion });
-			return null;
-		}
-
-		const result = findMatchingColorMappings(this.plugin.settings.colorMappings, frontmatter);
+		const result = findMatchingColorMappings(
+			this.plugin.settings.colorMappings,
+			getRuleMatchProperties(fileCache)
+		);
 		const idx = result.selected?.index ?? null;
 		this.matchCache.set(file.path, { index: idx, version: this.linkStyleVersion });
 		return idx === null ? null : this.plugin.settings.colorMappings[idx] ?? null;

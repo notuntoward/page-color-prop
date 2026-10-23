@@ -1,5 +1,6 @@
 export type SettingDefinitionItem<K extends string = string> = any;
 import { vi } from 'vitest';
+import { prepareFuzzySearch } from 'commons/testing';
 
 export const mockedNotice = vi.fn();
 
@@ -23,6 +24,37 @@ export class Plugin {
 }
 export class WorkspaceLeaf {}
 export class App {}
+
+export class AbstractInputSuggest<T> {
+  static instances: AbstractInputSuggest<any>[] = [];
+  limit = 100;
+  private selectCallback?: (value: T) => void;
+
+  constructor(public app: any, public inputEl: HTMLInputElement) {
+    AbstractInputSuggest.instances.push(this);
+  }
+
+  onSelect(callback: (value: T) => void) {
+    this.selectCallback = callback;
+    return this;
+  }
+
+  suggestions(query = this.inputEl.value): T[] {
+    return this.getSuggestions(query);
+  }
+
+  select(value: T): void {
+    this.selectCallback?.(value);
+  }
+
+  close = vi.fn();
+
+  protected getSuggestions(_query: string): T[] {
+    return [];
+  }
+
+  renderSuggestion(_value: T, _element: HTMLElement): void {}
+}
 export class PluginSettingTab {
   containerEl: any;
   constructor(public app: any, public plugin: any) {
@@ -159,3 +191,8 @@ export const setIcon = vi.fn();
 export const debounce = vi.fn((callback: () => void) => callback);
 
 export const getLinkpath = (s: string) => s;
+export { prepareFuzzySearch };
+
+export function getAllTags(cache: any): string[] {
+  return (cache?.tags ?? []).map((tag: any) => tag.tag);
+}

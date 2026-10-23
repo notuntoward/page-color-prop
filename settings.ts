@@ -1,5 +1,6 @@
 import { App, Modal, PluginSettingTab, setIcon, Setting, type SettingDefinitionItem } from 'obsidian';
 import { ownerWindow, requestFrameIn } from 'commons/windows';
+import { collectVaultMetadata, getPropertySuggestions, ValuePicker } from 'commons/properties';
 import type PageColorPropPlugin from './main';
 import { DEFAULT_LINK_TUNING, ColorMath, type LinkColorTuning } from './color-optimizer';
 import { computeAutoRuleColors, readBothThemeVars, readThemeCssVar, type ThemeCssVars } from './link-color-service';
@@ -50,6 +51,9 @@ export const DEFAULT_SETTINGS: PageColorPropSettings = {
 
 export class PageColorPropSettingTab extends PluginSettingTab {
   plugin: PageColorPropPlugin;
+  private catalog: ReturnType<typeof collectVaultMetadata> = { properties: [], tags: [] };
+  private catalogRefreshRegistered = false;
+  private readonly activePickers = new Set<ValuePicker>();
 
   constructor(app: App, plugin: PageColorPropPlugin) {
     super(app, plugin);
@@ -66,14 +70,21 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   }
 
   public refreshUI(): void {
-    if (typeof (this as any).update === 'function') {
-      (this as any).update();
-    } else {
-      this.display();
-    }
+    // This tab renders custom setting rows in display(), so refresh through the same
+    // full rebuild path to remove stale rows and dispose their picker instances.
+    this.display();
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
+    this.catalog = collectVaultMetadata(this.app);
+    if (!this.catalogRefreshRegistered) {
+      const ref = this.app.metadataCache.on('resolved', () => {
+        this.catalog = collectVaultMetadata(this.app);
+        for (const picker of this.activePickers) picker.refresh();
+      });
+      this.plugin.registerEvent(ref);
+      this.catalogRefreshRegistered = true;
+    }
     const definitions: SettingDefinitionItem[] = [
       {
         name: '',
@@ -157,24 +168,19 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       definitions.push({
         name: '',
         render: (setting: Setting) => {
-          setting.settingEl.addClass('page-color-prop-block-setting');
-          setting.infoEl?.remove();
-          setting.controlEl?.remove();
-          this.createEmptyState(setting.settingEl);
+          this.createEmptyState(this.createBlockContainer(setting));
         }
       });
     } else {
       definitions.push({
         name: '',
         render: (setting: Setting) => {
-          setting.settingEl.addClass('page-color-prop-block-setting');
-          setting.infoEl?.remove();
-          setting.controlEl?.remove();
-          setting.settingEl.createDiv({
+          const blockEl = this.createBlockContainer(setting);
+          blockEl.createDiv({
             cls: 'page-color-prop-rule-priority-note',
             text: 'Rule priority: if multiple rules match a note, the lowest matching rule below sets the background. Use Move up and Move down to reorder.'
           });
-          setting.settingEl.createEl('div', {
+          blockEl.createEl('div', {
             text: `Color mappings (${this.plugin.settings.colorMappings.length})`,
             cls: 'page-color-prop-group-heading'
           });
@@ -185,10 +191,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         definitions.push({
           name: '',
           render: (setting: Setting) => {
-            setting.settingEl.addClass('page-color-prop-block-setting');
-            setting.infoEl?.remove();
-            setting.controlEl?.remove();
-            this.createMappingSettings(setting.settingEl, mapping, index);
+            return this.createMappingSettings(this.createBlockContainer(setting), mapping, index);
           }
         });
       });
@@ -222,9 +225,12 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     return definitions;
   }
 
+  private renderCleanups: Array<() => void> = [];
+
   display(): void {
     const { containerEl } = this;
     if (!containerEl) return;
+    this.runRenderCleanups();
     containerEl.empty();
 
     for (const def of this.getSettingDefinitions()) {
@@ -244,13 +250,27 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           });
         }
       } else if (item.render) {
-        item.render(setting);
+        const cleanup = item.render(setting);
+        if (typeof cleanup === 'function') this.renderCleanups.push(cleanup);
       }
     }
   }
 
+  private createBlockContainer(setting: Setting): HTMLElement {
+    const settingEl = setting.settingEl;
+    settingEl.addClass('page-color-prop-block-setting-row');
+    setting.infoEl?.remove();
+    setting.controlEl?.remove();
+    return settingEl.createDiv({ cls: 'page-color-prop-block-setting' });
+  }
+
   onunload(): void {
+    this.runRenderCleanups();
     this.flushSave();
+  }
+
+  private runRenderCleanups(): void {
+    for (const cleanup of this.renderCleanups.splice(0)) cleanup();
   }
 
   private createEmptyState(containerEl: HTMLElement) {
@@ -296,6 +316,11 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   private saveTimeout: number | undefined = undefined;
   private pendingSave = false;
 
+  private applyRuleChangesImmediately() {
+    this.plugin.applyColorsToAllLeaves();
+    this.plugin.refreshLinkDecorations();
+  }
+
   private queueSave() {
     if (this.saveTimeout === undefined) {
       // First change in a sequence: save immediately so the UI refreshes
@@ -326,7 +351,11 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     }
   }
 
-  private createMappingSettings(containerEl: HTMLElement, mapping: PropertyColorMapping, index: number) {
+  private createMappingSettings(
+    containerEl: HTMLElement,
+    mapping: PropertyColorMapping,
+    index: number
+  ): () => void {
     const mappingCard = containerEl.createDiv('page-color-prop-mapping-card');
     const mappingHeader = mappingCard.createDiv('page-color-prop-mapping-header');
     mappingHeader.createSpan({
@@ -341,29 +370,53 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     };
     updateSummary();
 
-    new Setting(mappingCard)
+    const pickers: ValuePicker[] = [];
+    let valuePicker: ValuePicker | null = null;
+    const propertySetting = new Setting(mappingCard)
       .setName('Property')
-      .setDesc('Frontmatter property name (e.g., status, tags, priority)')
-      .addText(text => {
-        text.setValue(mapping.property || '').onChange(value => {
-          mapping.property = value;
-          updateSummary();
-          this.queueSave();
-        });
-        text.inputEl.disabled = false;
-      });
+      .setDesc('Choose a property from the vault, or enter a new name and confirm before using it.');
+    const propertyPicker = new ValuePicker(this.app, propertySetting.controlEl, {
+      suggestions: () => this.catalog.properties.map(({ name }) => name),
+      kind: 'property',
+      classPrefix: 'page-color-prop',
+      value: mapping.property || '',
+      multiple: false,
+      showSingleValueChip: true,
+      placeholder: 'Choose or type a property',
+      ariaLabel: 'Frontmatter property name',
+      onChange: values => {
+        mapping.property = values[0] ?? '';
+        valuePicker?.refresh();
+        updateSummary();
+        this.applyRuleChangesImmediately();
+        this.queueSave();
+      }
+    });
+    pickers.push(propertyPicker);
+    this.activePickers.add(propertyPicker);
 
-    new Setting(mappingCard)
+    const valueSetting = new Setting(mappingCard)
       .setName('Value')
-      .setDesc('Property value to match (e.g., completed, urgent, high)')
-      .addText(text => {
-        text.setValue(mapping.value || '').onChange(value => {
-          mapping.value = value;
-          updateSummary();
-          this.queueSave();
-        });
-        text.inputEl.disabled = false;
-      });
+      .setDesc('Choose a value used for this property in the vault, or confirm a new value before using it.');
+    valuePicker = new ValuePicker(this.app, valueSetting.controlEl, {
+      suggestions: () => getPropertySuggestions(this.catalog, mapping.property),
+      kind: 'value',
+      classPrefix: 'page-color-prop',
+      context: () => mapping.property,
+      value: mapping.value || '',
+      multiple: false,
+      showSingleValueChip: true,
+      placeholder: 'Choose or type a value',
+      ariaLabel: 'Property value to match',
+      onChange: values => {
+        mapping.value = values[0] ?? '';
+        updateSummary();
+        this.applyRuleChangesImmediately();
+        this.queueSave();
+      }
+    });
+    pickers.push(valuePicker);
+    this.activePickers.add(valuePicker);
 
     new Setting(mappingCard)
       .setName('Match type')
@@ -376,6 +429,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           .onChange(value => {
             mapping.matchType = value as 'exact' | 'contains';
             updateSummary();
+            this.applyRuleChangesImmediately();
             this.plugin.saveSettings();
           });
       });
@@ -442,6 +496,13 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       await this.plugin.saveSettings();
       this.refreshUI();
     }, { warning: true });
+
+    return () => {
+      for (const picker of pickers) {
+        picker.destroy();
+        this.activePickers.delete(picker);
+      }
+    };
   }
 
   private scrollToMapping(index: number) {
@@ -468,7 +529,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     }
     if (opts.disabled) {
       btn.disabled = true;
-      btn.setAttr('aria-disabled', 'true');
+      btn.setAttribute('aria-disabled', 'true');
     }
 
     const iconSpan = btn.createSpan('page-color-prop-footer-btn-icon');
@@ -476,8 +537,8 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     btn.createSpan({ cls: 'page-color-prop-footer-btn-label', text: label });
 
-    btn.setAttr('aria-label', label);
-    btn.setAttr('title', label);
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('title', label);
     btn.onclick = () => {
       if (!btn.disabled) onClick();
     };
@@ -1102,7 +1163,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     const swatchRow = group.createDiv("page-color-prop-swatch-group");
     const swatch = swatchRow.createEl("button", { cls: "page-color-prop-base-swatch", type: "button" });
     swatch.style.backgroundColor = mapping.baseColor;
-    swatch.setAttr("aria-label", `Rule base color ${mapping.baseColor}`);
+    swatch.setAttribute("aria-label", `Rule base color ${mapping.baseColor}`);
 
     let colorInput: HTMLInputElement | null = null;
     const setting = new Setting(swatchRow);
@@ -1111,9 +1172,8 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       picker.setValue(mapping.baseColor).onChange(async value => {
         mapping.baseColor = value;
         swatch.style.backgroundColor = value;
+        this.applyRuleChangesImmediately();
         await this.plugin.saveSettings();
-        this.plugin.applyColorsToAllLeaves();
-        this.plugin.refreshLinkDecorations();
         this.refreshUI();
       });
       const inputs = swatchRow.querySelectorAll("input[type=color]");

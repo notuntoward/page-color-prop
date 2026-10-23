@@ -92,16 +92,16 @@
   transition: background-color 0.2s ease-in-out;
 }
 
-.setting-item.page-color-prop-block-setting {
+.setting-item.page-color-prop-block-setting-row {
   display: block !important;
   border-top: none !important;
   padding: 0 !important;
   margin: 0 !important;
 }
 
-.setting-item.page-color-prop-block-setting > .setting-item-info,
-.setting-item.page-color-prop-block-setting > .setting-item-control {
-  display: none !important;
+.page-color-prop-block-setting {
+  margin: 0;
+  padding: 0;
 }
 
 .page-color-prop-mapping-card {

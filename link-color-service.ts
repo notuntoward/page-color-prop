@@ -15,13 +15,41 @@
 //     (or null if nothing matches).
 // ============================================================================
 
-import type { TFile } from 'obsidian';
+import { getAllTags, type CachedMetadata, type TFile } from 'obsidian';
+import { normalizeTag } from 'commons/properties';
 import { ColorOptimizer, DEFAULT_LINK_TUNING, type LinkColorTuning } from './color-optimizer';
 import type { PropertyColorMapping } from './settings';
 
 // Frontmatter shape used by the rule matcher. Mirrors main.ts.
 type FrontmatterValue = string | number | boolean | null | undefined | FrontmatterValue[];
 type Frontmatter = Record<string, FrontmatterValue>;
+
+/**
+ * Build the values rules can match against. Property mappings use frontmatter;
+ * `tags` also includes Obsidian's normalized inline and frontmatter tags.
+ */
+export function getRuleMatchProperties(cache: CachedMetadata): Frontmatter {
+ const frontmatter = (cache.frontmatter ?? {}) as Frontmatter;
+ const frontmatterTags = Array.isArray(frontmatter.tags)
+  ? frontmatter.tags.map(String)
+  : frontmatter.tags == null
+   ? []
+   : [String(frontmatter.tags)];
+ const tags = [...new Set([
+  ...frontmatterTags,
+  ...(getAllTags(cache) ?? [])
+   .map(normalizeTag)
+   .filter(Boolean)
+ ].map(normalizeTag).filter(Boolean))];
+
+ if (tags.length === 0) return frontmatter;
+
+ const properties: Frontmatter = { ...frontmatter, tags };
+ if (!Object.prototype.hasOwnProperty.call(frontmatter, 'tag')) {
+  properties.tag = tags;
+ }
+ return properties;
+}
 
 interface ColorMappingMatch {
 	mapping: PropertyColorMapping;
