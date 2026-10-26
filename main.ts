@@ -1,5 +1,5 @@
 import { getTabHeaderEl } from 'commons/internals';
-import { forEachWindow } from 'commons/windows';
+import { forEachWindow, setTimeoutIn, type CancelTimer } from 'commons/windows';
 import { getOpenWindows } from 'commons/workspace';
 import { FileView, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import {
@@ -33,7 +33,7 @@ export default class PageColorPropPlugin extends Plugin {
 	private themeObserver: MutationObserver | null = null;
 	private fileExplorerObservers: MutationObserver[] = [];
 	private multipleMatchNoticeKeys: Set<string> = new Set();
-	private pendingRetryHandles: Set<number> = new Set();
+	private pendingRetryHandles: Set<CancelTimer> = new Set();
 	linkDecorator: LinkDecorator | null = null;
 
 	async onload() {
@@ -201,8 +201,17 @@ export default class PageColorPropPlugin extends Plugin {
 
 
 	private clearPendingRetries() {
-		this.pendingRetryHandles.forEach(handle => window.clearTimeout(handle));
+		this.pendingRetryHandles.forEach(cancel => cancel());
 		this.pendingRetryHandles.clear();
+	}
+
+	private scheduleRetry(callback: () => void, delay: number): void {
+		let cancel: CancelTimer;
+		cancel = setTimeoutIn(activeWindow, () => {
+			this.pendingRetryHandles.delete(cancel);
+			callback();
+		}, delay);
+		this.pendingRetryHandles.add(cancel);
 	}
 
 	async loadSettings() {
@@ -353,8 +362,8 @@ export default class PageColorPropPlugin extends Plugin {
 		}
 	}
 
-	private updateThemeState() {
-		this.isDarkTheme = document.body.classList.contains('theme-dark');
+	private updateThemeState(doc: Document = activeDocument) {
+		this.isDarkTheme = doc.body.classList.contains('theme-dark');
 	}
 
 	private registerThemeChangeListener() {
@@ -371,7 +380,7 @@ export default class PageColorPropPlugin extends Plugin {
 				for (const mutation of mutations) {
 					if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
 						const wasLight = !this.isDarkTheme;
-						this.updateThemeState();
+						this.updateThemeState(win.document);
 						const isNowLight = !this.isDarkTheme;
 
 						if (wasLight !== isNowLight) {
@@ -482,11 +491,7 @@ export default class PageColorPropPlugin extends Plugin {
 		// parsing; without this guard each would spawn its own overlapping retry
 		// chain doing redundant full-workspace scans.
 		if (needsRetry && retriesLeft > 0 && this.pendingRetryHandles.size === 0) {
-			const handle = window.setTimeout(() => {
-				this.pendingRetryHandles.delete(handle);
-				this.applyColorsToAllLeaves(retriesLeft - 1);
-			}, 100);
-			this.pendingRetryHandles.add(handle);
+			this.scheduleRetry(() => this.applyColorsToAllLeaves(retriesLeft - 1), 100);
 		}
 	}
 
@@ -699,11 +704,7 @@ export default class PageColorPropPlugin extends Plugin {
 		}
 
 		if (hasUncachedFiles && retriesLeft > 0 && this.pendingRetryHandles.size === 0) {
-			const handle = window.setTimeout(() => {
-				this.pendingRetryHandles.delete(handle);
-				this.updateFileExplorerColors(retriesLeft - 1);
-			}, 250);
-			this.pendingRetryHandles.add(handle);
+			this.scheduleRetry(() => this.updateFileExplorerColors(retriesLeft - 1), 250);
 		}
 	}
 

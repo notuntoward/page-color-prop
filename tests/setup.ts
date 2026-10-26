@@ -7,6 +7,16 @@ Object.defineProperty(globalThis, 'CSS', {
   }
 });
 
+Object.defineProperty(globalThis, 'activeDocument', {
+  configurable: true,
+  value: document
+});
+
+Object.defineProperty(globalThis, 'activeWindow', {
+  configurable: true,
+  value: window
+});
+
 Element.prototype.addClass = function addClass(className: string) {
   this.classList.add(className);
   return this;

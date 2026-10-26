@@ -24,7 +24,7 @@
 // decorators; it does not copy any third-party code.
 // ============================================================================
 
-import { Decoration, EditorView, ViewPlugin, type DecorationSet, ViewUpdate, WidgetType } from '@codemirror/view';
+import { Decoration, EditorView, ViewPlugin, type DecorationSet, ViewUpdate } from '@codemirror/view';
 import { RangeSetBuilder, StateEffect, type Extension } from '@codemirror/state';
 import type { TFile } from 'obsidian';
 import type PageColorPropPlugin from './main';
@@ -33,23 +33,6 @@ const WIKILINK_RE = /\[\[([^\]\n]+?)\]\]/g;
 const MDLINK_RE = /\[([^\]\n]+?)\]\(([^)\n]+?)\)/g;
 
 export const forceRecomputeEffect = StateEffect.define<number>();
-
-class LinkColorWidget extends WidgetType {
-	constructor(readonly color: string, readonly ruleIndex: number) {
-		super();
-	}
-	eq(other: LinkColorWidget): boolean {
-		return other.color === this.color && other.ruleIndex === this.ruleIndex;
-	}
-	ignoreEvent(): boolean { return false; }
-	toDOM(): HTMLElement {
-		const span = document.createElement('span');
-		span.className = 'page-color-prop-link';
-		span.style.setProperty('--page-color-prop-link-color', this.color);
-		span.setAttribute('data-page-color-prop-link-rule', String(this.ruleIndex));
-		return span;
-	}
-}
 
 /** Build the CM6 extension. Pass the plugin so the plugin owns the
  *  lifecycle and so the extension can call the same LinkDecorator that

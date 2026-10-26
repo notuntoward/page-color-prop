@@ -1,5 +1,5 @@
 import { App, Modal, PluginSettingTab, setIcon, Setting, type SettingDefinitionItem } from 'obsidian';
-import { ownerWindow, requestFrameIn } from 'commons/windows';
+import { ownerWindow, requestFrameIn, setTimeoutIn, type CancelTimer } from 'commons/windows';
 import { collectVaultMetadata, getPropertySuggestions, ValuePicker } from 'commons/properties';
 import type PageColorPropPlugin from './main';
 import { DEFAULT_LINK_TUNING, ColorMath, type LinkColorTuning } from './color-optimizer';
@@ -313,7 +313,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     });
   }
 
-  private saveTimeout: number | undefined = undefined;
+  private saveTimeout: CancelTimer | undefined = undefined;
   private pendingSave = false;
 
   private applyRuleChangesImmediately() {
@@ -332,8 +332,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       this.pendingSave = true;
     }
 
-    window.clearTimeout(this.saveTimeout);
-      this.saveTimeout = window.setTimeout(() => {
+    this.saveTimeout?.();
+    const win = ownerWindow(this.containerEl) ?? activeWindow;
+    this.saveTimeout = setTimeoutIn(win, () => {
       if (this.pendingSave) {
         this.plugin.saveSettings();
       }
@@ -343,7 +344,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   }
 
   private flushSave() {
-    window.clearTimeout(this.saveTimeout);
+    this.saveTimeout?.();
     this.saveTimeout = undefined;
     if (this.pendingSave) {
       this.pendingSave = false;
@@ -506,8 +507,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   }
 
   private scrollToMapping(index: number) {
-    window.requestAnimationFrame(() => {
-      const root = this.containerEl ?? document;
+    const root = this.containerEl;
+    const win = ownerWindow(root) ?? activeWindow;
+    requestFrameIn(win, () => {
       const mappingCards = root.querySelectorAll('.page-color-prop-mapping-card');
       const targetCard = mappingCards[index] as HTMLElement | undefined;
       if (targetCard) {
@@ -1284,7 +1286,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
    *  link-color preview bug happened elsewhere in this file — one copy
    *  quietly drifted from the other. */
   private computeColorFromThemeVarsForTheme(colorStr: string, theme: 'Light' | 'Dark' | null): string {
-    const body = document.body;
+    const body = this.containerEl.ownerDocument.body;
     const isCurrentlyDark = body.classList.contains('theme-dark');
     const wantDark = theme === 'Dark';
     const needsSwitch = theme !== null && isCurrentlyDark !== wantDark;
@@ -1295,7 +1297,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     }
 
     try {
-      const hex = readThemeCssVar(colorStr);
+      const hex = readThemeCssVar(colorStr, this.containerEl.ownerDocument);
       return hex ?? '#808080';
     } finally {
       if (needsSwitch) {
@@ -1362,7 +1364,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       throw err;
     }
 
-    const win = ownerWindow(input) ?? window;
+    const win = ownerWindow(input) ?? activeWindow;
     requestFrameIn(win, () => {
       restoreStyles();
     });

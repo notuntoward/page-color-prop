@@ -34,7 +34,7 @@ function createPlugin(overrides: Partial<PageColorPropSettings> = {}) {
   };
   plugin.isDarkTheme = false;
   plugin.multipleMatchNoticeKeys = new Set<string>();
-  plugin.pendingRetryHandles = new Set<number>();
+  plugin.pendingRetryHandles = new Set<() => void>();
   plugin.fileExplorerObservers = [];
   plugin.app = {
     workspace: {
@@ -182,15 +182,25 @@ describe('PageColorPropPlugin', () => {
   });
 
   it('removes styles and disconnects the theme observer when unloaded', () => {
-    const disconnect = vi.fn();
-    const plugin = createPlugin();
-    plugin.removeAllStyles = vi.fn();
-    plugin.themeObserver = { disconnect };
+    vi.useFakeTimers();
+    try {
+      const disconnect = vi.fn();
+      const plugin = createPlugin();
+      plugin.removeAllStyles = vi.fn();
+      plugin.themeObserver = { disconnect };
+      const retry = vi.fn();
+      plugin.scheduleRetry(retry, 100);
 
-    plugin.onunload();
+      plugin.onunload();
+      vi.advanceTimersByTime(100);
 
-    expect(plugin.removeAllStyles).toHaveBeenCalledTimes(1);
-    expect(disconnect).toHaveBeenCalledTimes(1);
+      expect(plugin.removeAllStyles).toHaveBeenCalledTimes(1);
+      expect(disconnect).toHaveBeenCalledTimes(1);
+      expect(retry).not.toHaveBeenCalled();
+      expect(plugin.pendingRetryHandles.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('drops legacy color mappings that lack a stable id', async () => {

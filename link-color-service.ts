@@ -117,7 +117,7 @@ export const ACCENT_SEED_COLOR = 'hsl(var(--accent-h), var(--accent-s), 50%)';
  * a 6-digit hex string (or null if it can't be resolved). Synchronous;
  * uses a temp probe div as in the settings tab.
  */
-export function readThemeCssVar(colorStr: string): string | null {
+export function readThemeCssVar(colorStr: string, doc: Document = activeDocument): string | null {
 	if (!colorStr || typeof colorStr !== 'string') return null;
 	if (!colorStr.includes('var(--')) {
 		// Already a flat color — try to normalize to hex.
@@ -133,17 +133,19 @@ export function readThemeCssVar(colorStr: string): string | null {
 		return null;
 	}
 
-	const temp = document.createElement('div');
+	const win = doc.defaultView;
+	if (!doc.body || !win) return null;
+	const temp = doc.createElement('div');
 	temp.style.position = 'absolute';
 	temp.style.left = '-9999px';
 	temp.style.top = '-9999px';
 	temp.style.visibility = 'hidden';
 	temp.style.color = colorStr;
-	document.body.appendChild(temp);
+	doc.body.appendChild(temp);
 
 	let computed: string;
 	try {
-		computed = window.getComputedStyle(temp).color;
+		computed = win.getComputedStyle(temp).color;
 	} finally {
 		temp.remove();
 	}
@@ -165,7 +167,7 @@ export function readThemeCssVar(colorStr: string): string | null {
  * on error paths, so the user never sees a flicker.
  */
 export function readBothThemeVars(): ThemeCssVars | null {
-	const body = document.body;
+	const body = activeDocument.body;
 	const wasDark = body.classList.contains('theme-dark');
 
 	const readVars = (): { bo: string; ui: string; to: string; lo: string; nv: string; mt: string } | null => {
