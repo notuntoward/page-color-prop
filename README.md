@@ -32,6 +32,12 @@ Once the plugin is installed, you can create rules (called "mappings") to connec
 3.  Click `+ Add New Mapping` to create your first rule.
 4.  Fill out the fields for the new mapping.
 
+Property and value controls follow Property Porter's shared conventions: property names carry type icons, existing names and values are suggested, and new entries require explicit confirmation. Tags use tag bubbles; other values use plain removable selections. Exact-match rules use native number/date/time editors or checkbox choices when the property has that type. Contains rules keep a text editor so partial matches remain possible. These controls configure rules; they do not create properties or change values in your notes.
+
+Each rule groups Property, Match type, and Value into one compact condition row, rather than separate description-heavy settings rows. The fields stack on narrow panels, with a shared hint explaining entry confirmation.
+
+Click a property/value row or press Enter on it to edit. Up/Down or Ctrl+N/P move between highlighted rows; Alt+Up/Down move between rows while editing. Escape returns from an editor to its row when no suggestion list is open. Tab and Shift+Tab retain normal settings-page navigation rather than looping inside a rule.
+
 ### Example Use Case: Color-coding a "Status"
 
 Let's say you want all notes with `status: complete` in their frontmatter to have a green background.

@@ -1,6 +1,9 @@
 import { App, Modal, PluginSettingTab, setIcon, Setting, type SettingDefinitionItem } from 'obsidian';
 import { ownerWindow, requestFrameIn, setTimeoutIn, type CancelTimer } from 'commons/windows';
-import { collectVaultMetadata, getPropertySuggestions, ValuePicker } from 'commons/properties';
+import {
+  collectVaultMetadata, navigatePropertyRows,
+  propertyNamePickerOptions, propertyValuePickerOptions, ValuePicker
+} from 'commons/properties';
 import type PageColorPropPlugin from './main';
 import { DEFAULT_LINK_TUNING, ColorMath, type LinkColorTuning } from './color-optimizer';
 import { computeAutoRuleColors, readBothThemeVars, readThemeCssVar, type ThemeCssVars } from './link-color-service';
@@ -373,21 +376,21 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     const pickers: ValuePicker[] = [];
     let valuePicker: ValuePicker | null = null;
-    const propertySetting = new Setting(mappingCard)
-      .setName('Property')
-      .setDesc('Choose a property from the vault, or enter a new name and confirm before using it.');
+    const condition = mappingCard.createDiv('page-color-prop-condition');
+    const propertySetting = new Setting(condition)
+      .setName('Property');
     const propertyPicker = new ValuePicker(this.app, propertySetting.controlEl, {
-      suggestions: () => this.catalog.properties.map(({ name }) => name),
-      kind: 'property',
+      ...propertyNamePickerOptions(() => this.catalog),
+      appearance: 'property',
       classPrefix: 'page-color-prop',
       value: mapping.property || '',
       multiple: false,
       showSingleValueChip: true,
-      placeholder: 'Choose or type a property',
+      placeholder: 'Property…',
       ariaLabel: 'Frontmatter property name',
       onChange: values => {
         mapping.property = values[0] ?? '';
-        valuePicker?.refresh();
+        updateValuePicker();
         updateSummary();
         this.applyRuleChangesImmediately();
         this.queueSave();
@@ -396,18 +399,26 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     pickers.push(propertyPicker);
     this.activePickers.add(propertyPicker);
 
-    const valueSetting = new Setting(mappingCard)
-      .setName('Value')
-      .setDesc('Choose a value used for this property in the vault, or confirm a new value before using it.');
+    const valueSetting = new Setting(condition)
+      .setName('Value');
+    const valueOptions = () => ({
+      ...propertyValuePickerOptions(this.catalog, mapping.property, mapping.value, mapping.matchType === 'contains'),
+      suggestions: () => {
+        const options = propertyValuePickerOptions(this.catalog, mapping.property, mapping.value, mapping.matchType === 'contains');
+        return typeof options.suggestions === 'function' ? options.suggestions() : options.suggestions;
+      },
+      context: () => mapping.property
+    });
+    const updateValuePicker = () => valuePicker?.updateOptions(valueOptions());
     valuePicker = new ValuePicker(this.app, valueSetting.controlEl, {
-      suggestions: () => getPropertySuggestions(this.catalog, mapping.property),
-      kind: 'value',
+      ...valueOptions(),
+      appearance: 'property',
       classPrefix: 'page-color-prop',
       context: () => mapping.property,
       value: mapping.value || '',
       multiple: false,
       showSingleValueChip: true,
-      placeholder: 'Choose or type a value',
+      placeholder: 'Value…',
       ariaLabel: 'Property value to match',
       onChange: values => {
         mapping.value = values[0] ?? '';
@@ -418,10 +429,11 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     });
     pickers.push(valuePicker);
     this.activePickers.add(valuePicker);
+    updateValuePicker();
+    const stopNavigation = navigatePropertyRows(mappingCard, [propertySetting.settingEl, valueSetting.settingEl]);
 
-    new Setting(mappingCard)
+    const matchSetting = new Setting(condition)
       .setName('Match type')
-      .setDesc('Exact match or contains (for arrays like tags)')
       .addDropdown(dropdown => {
         dropdown
           .addOption('exact', 'Exact match')
@@ -429,11 +441,17 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           .setValue(mapping.matchType || 'exact')
           .onChange(value => {
             mapping.matchType = value as 'exact' | 'contains';
+            updateValuePicker();
             updateSummary();
             this.applyRuleChangesImmediately();
             this.plugin.saveSettings();
           });
       });
+    condition.insertBefore(matchSetting.settingEl, valueSetting.settingEl);
+    mappingCard.createDiv({
+      cls: 'page-color-prop-condition-hint',
+      text: 'Choose existing properties and values, or type to create one. New entries require confirmation.'
+    });
 
     this.createBaseColorSetting(mappingCard, mapping);
 
@@ -499,6 +517,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     }, { warning: true });
 
     return () => {
+      stopNavigation();
       for (const picker of pickers) {
         picker.destroy();
         this.activePickers.delete(picker);

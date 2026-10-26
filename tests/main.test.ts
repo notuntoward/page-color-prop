@@ -967,7 +967,17 @@ describe('PageColorPropPlugin', () => {
 
       const cards = Array.from(tab.containerEl.querySelectorAll('.page-color-prop-mapping-card'));
       expect(cards).toHaveLength(2);
-      expect(cards.map(card => Array.from(card.querySelectorAll('.commons-property-picker-chip > span'))
+      for (const card of cards) {
+        const condition = card.querySelector('.page-color-prop-condition');
+        expect(condition?.querySelectorAll('.commons-property-picker')).toHaveLength(2);
+        expect(condition?.querySelector('select')).not.toBeNull();
+        expect(condition?.children[0].querySelector('.commons-property-picker')).not.toBeNull();
+        expect(condition?.children[1].querySelector('select')).not.toBeNull();
+        expect(condition?.children[2].querySelector('.commons-property-picker')).not.toBeNull();
+        expect(Array.from(condition!.querySelectorAll<HTMLElement>('.commons-property-picker'))
+          .every(picker => picker.dataset.appearance === 'property')).toBe(true);
+      }
+      expect(cards.map(card => Array.from(card.querySelectorAll('.commons-property-picker-label'))
         .map(label => label.textContent))).toEqual([
         ['tags', 'ai-generated'],
         ['category', 'journal']
@@ -987,6 +997,64 @@ describe('PageColorPropPlugin', () => {
       tab.onunload();
     });
 
+    it('uses shared property icons and row navigation without trapping settings focus', () => {
+      const plugin = createPlugin();
+      plugin.settings.colorMappings = [mapping({ property: 'tags', value: 'project' })];
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      tab.display();
+      document.body.appendChild(tab.containerEl);
+      const rows = Array.from(tab.containerEl.querySelectorAll<HTMLElement>('.commons-property-row'));
+      expect(rows).toHaveLength(2);
+      expect(rows[0].querySelector('[aria-label="Tags"]')).not.toBeNull();
+      const input = rows[0].querySelector<HTMLInputElement>('input')!;
+      rows[0].focus();
+      rows[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      expect(document.activeElement).toBe(input);
+      const tabKey = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+      input.dispatchEvent(tabKey);
+      expect(tabKey.defaultPrevented).toBe(false);
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      expect(document.activeElement).toBe(rows[0]);
+      rows[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+      expect(document.activeElement).toBe(rows[1]);
+      tab.onunload();
+      tab.containerEl.remove();
+    });
+
+    it('switches the match editor with the property while preserving contains patterns', () => {
+      const plugin = createPlugin();
+      const file = { path: 'note.md' };
+      plugin.app.vault.getMarkdownFiles.mockReturnValue([file]);
+      plugin.app.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { due: '2026-10-26', archived: false, count: 2 }
+      });
+      plugin.settings.colorMappings = [mapping({ property: 'due', value: '2026-10-26', matchType: 'exact' })];
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      tab.display();
+      const [propertyInput, valueInput] = Array.from(tab.containerEl.querySelectorAll<HTMLInputElement>('.commons-property-picker-input'));
+      expect(valueInput.type).toBe('date');
+      const propertySuggest = AbstractInputSuggest.instances.find(suggest => suggest.inputEl === propertyInput)!;
+      propertySuggest.select(propertySuggest.suggestions('archived').find((option: any) => option.value === 'archived'));
+      expect(valueInput.type).toBe('text');
+      const valueSuggest = AbstractInputSuggest.instances.find(suggest => suggest.inputEl === valueInput)!;
+      expect(valueSuggest.suggestions('').map((option: any) => option.value)).toEqual(['false', 'true']);
+      propertySuggest.select(propertySuggest.suggestions('count').find((option: any) => option.value === 'count'));
+      expect(valueInput.type).toBe('number');
+      const matchSelect = tab.containerEl.querySelector<HTMLSelectElement>('.page-color-prop-condition select')!;
+      const beforeChange = plugin.settings.colorMappings[0].value;
+      matchSelect.value = 'contains';
+      matchSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(valueInput.type).toBe('text');
+      expect(plugin.settings.colorMappings[0].matchType).toBe('contains');
+      expect(plugin.settings.colorMappings[0].value).toBe(beforeChange);
+      tab.onunload();
+      plugin.settings.colorMappings = [mapping({ property: 'due', value: '2026-', matchType: 'contains' })];
+      tab.display();
+      expect(tab.containerEl.querySelectorAll<HTMLInputElement>('.commons-property-picker-input')[1].type).toBe('text');
+      expect(plugin.settings.colorMappings[0].value).toBe('2026-');
+      tab.onunload();
+    });
+
     it('renders editable property and value inputs for a blank mapping', () => {
       const plugin = createPlugin();
       plugin.settings.colorMappings = [mapping({ property: '', value: '' })];
@@ -999,8 +1067,8 @@ describe('PageColorPropPlugin', () => {
       const inputs = Array.from(card!.querySelectorAll<HTMLInputElement>('.commons-property-picker-input'));
       expect(inputs).toHaveLength(2);
       expect(inputs.map(input => input.placeholder)).toEqual([
-        'Choose or type a property',
-        'Choose or type a value'
+        'Property…',
+        'Value…'
       ]);
       expect(tab.containerEl.querySelectorAll('.page-color-prop-block-setting.setting-item')).toHaveLength(0);
       tab.onunload();

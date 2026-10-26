@@ -155,10 +155,25 @@ export class Setting {
     return this;
   }
   addDropdown(cb: (dropdown: any) => void) {
+    const selectEl = document.createElement('select');
+    this.controlEl.appendChild(selectEl);
     const dropdown = {
-      addOption: vi.fn().mockReturnThis(),
-      setValue: vi.fn().mockReturnThis(),
-      onChange: vi.fn().mockReturnThis()
+      selectEl,
+      addOption: vi.fn((value: string, label: string) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        selectEl.appendChild(option);
+        return dropdown;
+      }),
+      setValue: vi.fn((value: string) => {
+        selectEl.value = value;
+        return dropdown;
+      }),
+      onChange: vi.fn((callback: (value: string) => void) => {
+        selectEl.addEventListener('change', () => callback(selectEl.value));
+        return dropdown;
+      })
     };
     cb(dropdown);
     return this;
