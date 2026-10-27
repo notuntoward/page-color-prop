@@ -19,3 +19,68 @@ jobs:
     uses: notuntoward/kilo-dotfiles/.github/workflows/no-ai-attribution.yml@668c0feea0a5d67cc9dd362776289b0755301f63
     with:
       policy-ref: 668c0feea0a5d67cc9dd362776289b0755301f63
+
+  direct-update:
+    if: github.event_name == 'workflow_dispatch'
+    needs: policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out trusted policy only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: notuntoward/kilo-dotfiles
+          ref: 668c0feea0a5d67cc9dd362776289b0755301f63
+          persist-credentials: false
+      - name: Validate every outgoing commit and publish its result
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const { findViolation } = require(process.env.GITHUB_WORKSPACE + '/dot_config/kilo/hooks/ai-attribution.cjs');
+            const head = context.sha;
+            const target = context.payload.repository.default_branch;
+            const source = context.ref.replace(/^refs\/heads\//, '');
+            const publish = (state, description) => github.rest.repos.createCommitStatus({
+              ...context.repo, sha: head, state, context: 'No AI attribution', description,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+            await publish('pending', 'Checking every outgoing commit message');
+            try {
+              const { data: base } = await github.rest.repos.getBranch({ ...context.repo, branch: target });
+              const commits = [];
+              let total;
+              for (let page = 1; total === undefined || commits.length < total; page++) {
+                const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+                  ...context.repo, basehead: `${base.commit.sha}...${head}`, per_page: 100, page
+                });
+                if (!['ahead', 'identical'].includes(comparison.status)) {
+                  throw new Error('The candidate must contain the current default branch');
+                }
+                if (total !== undefined && total !== comparison.total_commits) {
+                  throw new Error('The comparison changed during validation');
+                }
+                total = comparison.total_commits;
+                if (commits.length < total && comparison.commits.length === 0) {
+                  throw new Error('GitHub did not return every outgoing commit');
+                }
+                commits.push(...comparison.commits);
+              }
+              if (commits.length !== total || new Set(commits.map(commit => commit.sha)).size !== total) {
+                throw new Error('GitHub did not return every outgoing commit exactly once');
+              }
+              if (total > 0 && !commits.some(commit => commit.sha === head)) {
+                throw new Error('The comparison did not include the candidate head');
+              }
+              for (const commit of commits) {
+                const reason = findViolation(commit.commit.message);
+                if (reason) throw new Error(`${reason} in commit ${commit.sha}`);
+              }
+              const { data: currentBase } = await github.rest.repos.getBranch({ ...context.repo, branch: target });
+              const { data: currentHead } = await github.rest.repos.getBranch({ ...context.repo, branch: source });
+              if (currentBase.commit.sha !== base.commit.sha || currentHead.commit.sha !== head) {
+                throw new Error('A branch changed during validation; rerun the workflow');
+              }
+              await publish('success', 'No prohibited AI attribution in outgoing commits');
+            } catch (error) {
+              await publish('failure', 'Attribution validation failed; inspect the workflow');
+              throw error;
+            }
