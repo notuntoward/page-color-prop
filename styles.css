@@ -344,9 +344,18 @@
   margin-bottom: 4px;
 }
 
+.page-color-prop-mapping-card .page-color-prop-color-setting-container .setting-item-control > button:not(.page-color-prop-link-preview),
+.page-color-prop-mapping-card .page-color-prop-base-color-setting .setting-item-control > button {
+  box-sizing: border-box;
+  width: var(--input-height);
+  min-width: var(--input-height);
+  height: var(--input-height);
+  min-height: var(--input-height);
+  padding: 0;
+  flex: 0 0 var(--input-height);
+}
+
 .page-color-prop-sample-box {
-  width: 34px;
-  height: 34px;
   border-radius: 4px;
   border: 1px solid var(--background-modifier-border);
   box-shadow: none;
@@ -462,11 +471,6 @@
     padding: 8px;
     margin-bottom: 8px;
   }
-
-  .page-color-prop-sample-box {
-    width: 30px;
-    height: 30px;
-  }
 }
 
 .page-color-prop-base-color-group {
@@ -510,8 +514,6 @@
 }
 
 .page-color-prop-base-swatch {
-  width: 28px;
-  height: 28px;
   border-radius: 4px;
   border: 1px solid var(--background-modifier-border);
   padding: 0;
