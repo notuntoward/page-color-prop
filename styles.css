@@ -383,6 +383,7 @@
   flex: 0 0 100px;
   min-width: 100px;
   max-width: 110px;
+  height: auto;
   min-height: 48px;
   padding: 3px 5px;
   border-radius: 4px;
@@ -402,6 +403,7 @@
 }
 
 .page-color-prop-link-preview-sample {
+  flex-shrink: 0;
   font-size: 12px;
   line-height: 1.2;
   white-space: nowrap;
