@@ -105,6 +105,7 @@
 }
 
 .page-color-prop-mapping-card {
+  --page-color-prop-table-cell-inline-padding: 10px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 4px;
   padding: 10px 12px;
@@ -237,7 +238,7 @@
 .page-color-prop-rule-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 .page-color-prop-rule-table th {
@@ -245,14 +246,14 @@
   font-size: 0.8em;
   text-transform: uppercase;
   color: var(--text-muted);
-  padding: 6px 10px;
+  padding: 5px var(--page-color-prop-table-cell-inline-padding);
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .page-color-prop-rule-table td {
-  padding: 10px;
+  padding: 8px var(--page-color-prop-table-cell-inline-padding);
   border-bottom: 1px solid var(--background-modifier-border);
-  vertical-align: middle;
+  vertical-align: top;
 }
 
 /* Remove the last row's bottom border so the footer's top border is the
@@ -289,6 +290,7 @@
 
 .page-color-prop-rule-table .page-color-prop-color-setting-container .setting-item .setting-item-control {
   justify-content: flex-start !important;
+  align-items: flex-start !important;
 }
 
 /* Clear visual break so footer buttons read as "whole rule", not "dark row" */
@@ -376,6 +378,7 @@
    visually verify readability, distinctness from default link, and the
    picked color all in one place. */
 .page-color-prop-link-preview {
+  appearance: none;
   flex: 0 0 100px;
   min-width: 100px;
   max-width: 110px;
@@ -389,8 +392,11 @@
   flex-direction: column;
   justify-content: center;
   gap: 2px;
+  color: inherit;
+  font: inherit;
   font-size: 12px;
   line-height: 1.2;
+  text-align: right;
   align-self: stretch;
 }
 
@@ -464,19 +470,39 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  margin-bottom: 12px;
+  margin-bottom: 6px;
 }
 
 .page-color-prop-base-color-label {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-normal);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
-.page-color-prop-swatch-group {
+.page-color-prop-base-color-setting {
+  width: 100%;
+}
+
+.page-color-prop-base-color-setting .setting-item {
+  justify-content: flex-start;
+  padding: 0;
+  margin: 0;
+}
+
+.page-color-prop-base-color-setting .setting-item-info {
+  display: none;
+}
+
+.page-color-prop-base-color-setting .setting-item-control {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
+  margin-left: -12px;
+  padding-left: 0;
   gap: 6px;
 }
 
@@ -489,7 +515,7 @@
 }
 
 .page-color-prop-base-color-helper {
-  margin: 4px 0 0 0;
+  margin: 2px var(--page-color-prop-table-cell-inline-padding) 4px;
   padding: 0;
   font-size: 0.78rem;
   font-style: italic;

@@ -116,7 +116,9 @@ function augmentMockEl(el: any): any {
   el.addClass = vi.fn((c: string) => el.classList.add(c));
   el.removeClass = vi.fn((c: string) => el.classList.remove(c));
   el.setAttr = vi.fn();
-  el.onClickEvent = vi.fn();
+  el.onClickEvent = vi.fn((callback: (event: MouseEvent) => void) => {
+    el.addEventListener('click', callback);
+  });
   return el;
 }
 
@@ -179,21 +181,37 @@ export class Setting {
     return this;
   }
   addColorPicker(cb: (picker: any) => void) {
-    const picker = {
-      setValue: vi.fn().mockReturnThis(),
-      onChange: vi.fn().mockReturnThis()
+    const input = augmentMockEl(document.createElement('input'));
+    input.type = 'color';
+    this.controlEl.appendChild(input);
+    const picker: any = {
+      setValue: vi.fn((value: string) => {
+        input.value = value;
+        return picker;
+      }),
+      onChange: vi.fn((callback: (value: string) => void) => {
+        input.addEventListener('change', () => callback(input.value));
+        return picker;
+      })
     };
     cb(picker);
     return this;
   }
   addButton(cb: (btn: any) => void) {
-    const btn = {
+    const buttonEl = augmentMockEl(document.createElement('button'));
+    buttonEl.type = 'button';
+    this.controlEl.appendChild(buttonEl);
+    const btn: any = {
+      buttonEl,
       setButtonText: vi.fn().mockReturnThis(),
       setCta: vi.fn().mockReturnThis(),
       setWarning: vi.fn().mockReturnThis(),
       setIcon: vi.fn().mockReturnThis(),
       setTooltip: vi.fn().mockReturnThis(),
-      onClick: vi.fn().mockReturnThis()
+      onClick: vi.fn((callback: (event: MouseEvent) => void) => {
+        buttonEl.addEventListener('click', callback);
+        return btn;
+      })
     };
     cb(btn);
     return this;

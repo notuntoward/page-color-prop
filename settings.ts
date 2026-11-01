@@ -697,8 +697,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       const mode = getIsAuto() ? 'Auto from theme' : 'Manual';
       const displayColor = getDisplayColor();
       sampleBox.style.backgroundColor = displayColor;
-      sampleBox.ariaLabel = `${mode} color: ${displayColor}. Click to open color picker.`;
-      sampleBox.title = `${mode}: ${displayColor}`;
+      const label = `${mode} color: ${displayColor}. Activate to choose a color.`;
+      sampleBox.setAttribute('aria-label', label);
+      sampleBox.title = label;
     };
 
     let colorPickerInput: HTMLInputElement | null = null;
@@ -716,6 +717,10 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       const colorInputs = colorSettingContainer.querySelectorAll('input[type="color"]');
       colorPickerInput = colorInputs[colorInputs.length - 1] as HTMLInputElement | null;
       colorPickerInput?.addClass('page-color-prop-hidden-color-picker');
+      if (colorPickerInput) {
+        colorPickerInput.tabIndex = -1;
+        colorPickerInput.setAttribute('aria-hidden', 'true');
+      }
     };
 
     const openColorPicker = () => {
@@ -739,7 +744,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     settingEl.addButton(button => {
       toggleBtnComponent = button;
       button.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
-      button.setTooltip(getIsAuto() ? 'Switch to manual color' : 'Switch to auto color');
+      const tooltip = getIsAuto() ? 'Switch to manual color' : 'Switch to auto color';
+      button.setTooltip(tooltip);
+      button.buttonEl.setAttribute('aria-label', tooltip);
       button.onClick(async () => {
         const nowAuto = !getIsAuto();
         setIsAuto(nowAuto);
@@ -751,7 +758,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
         updateSwatch();
         button.setIcon(nowAuto ? 'pipette' : 'sparkles');
-        button.setTooltip(nowAuto ? 'Switch to manual color' : 'Switch to auto color');
+        const nextTooltip = nowAuto ? 'Switch to manual color' : 'Switch to auto color';
+        button.setTooltip(nextTooltip);
+        button.buttonEl.setAttribute('aria-label', nextTooltip);
         if (!nowAuto) openColorPicker();
       });
     });
@@ -774,6 +783,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         if (toggleBtnComponent) {
           toggleBtnComponent.setIcon('sparkles');
           toggleBtnComponent.setTooltip('Switch to auto color');
+          toggleBtnComponent.buttonEl.setAttribute('aria-label', 'Switch to auto color');
         }
       }
       openColorPicker();
@@ -924,6 +934,10 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       const inputs = settingContainer.querySelectorAll('input[type="color"]');
       colorPickerInput = inputs[inputs.length - 1] as HTMLInputElement | null;
       colorPickerInput?.addClass('page-color-prop-hidden-color-picker');
+      if (colorPickerInput) {
+        colorPickerInput.tabIndex = -1;
+        colorPickerInput.setAttribute('aria-hidden', 'true');
+      }
     });
 
     const openColorPicker = () => {
@@ -938,7 +952,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     settingEl.addButton(button => {
       toggleBtnComponent = button;
       button.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
-      button.setTooltip(getIsAuto() ? 'Switch to manual color' : 'Switch to auto color');
+      const tooltip = getIsAuto() ? 'Switch to manual color' : 'Switch to auto color';
+      button.setTooltip(tooltip);
+      button.buttonEl.setAttribute('aria-label', tooltip);
       button.onClick(async () => {
         const nowAuto = !getIsAuto();
         setIsAuto(nowAuto);
@@ -951,7 +967,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         updatePreview();
         onChanged?.();
         button.setIcon(nowAuto ? 'pipette' : 'sparkles');
-        button.setTooltip(nowAuto ? 'Switch to manual color' : 'Switch to auto color');
+        const nextTooltip = nowAuto ? 'Switch to manual color' : 'Switch to auto color';
+        button.setTooltip(nextTooltip);
+        button.buttonEl.setAttribute('aria-label', nextTooltip);
         if (!nowAuto) openColorPicker();
       });
     });
@@ -962,27 +980,31 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     // forced via a hidden element so the preview shows dark-theme defaults
     // even while the user is currently in light mode (and vice versa).
     const themeName: 'Light' | 'Dark' = isLight ? 'Light' : 'Dark';
-    const preview = settingEl.controlEl.createDiv('page-color-prop-link-preview');
+    const preview = settingEl.controlEl.createEl('button', {
+      cls: 'page-color-prop-link-preview',
+      type: 'button'
+    });
     const defaultBg = this.computeColorFromThemeVarsForTheme('var(--background-primary)', themeName);
     const defaultLink = this.computeColorFromThemeVarsForTheme('var(--link-color)', themeName);
     const defaultText = this.computeColorFromThemeVarsForTheme('var(--text-normal)', themeName);
     preview.style.backgroundColor = defaultBg || '';
     preview.style.color = defaultText || '';
 
-    const sampleText = preview.createDiv('page-color-prop-link-preview-sample');
+    const sampleText = preview.createSpan('page-color-prop-link-preview-sample');
     sampleText.setText('Sample text');
-    const defaultLinkEl = preview.createDiv('page-color-prop-link-preview-sample');
+    const defaultLinkEl = preview.createSpan('page-color-prop-link-preview-sample');
     defaultLinkEl.setText('Default link');
     defaultLinkEl.style.color = defaultLink || '';
-    const ruleLinkEl = preview.createDiv('page-color-prop-link-preview-sample page-color-prop-link-preview-rule');
+    const ruleLinkEl = preview.createSpan('page-color-prop-link-preview-sample page-color-prop-link-preview-rule');
     ruleLinkEl.setText('Rule link');
 
     const updatePreview = () => {
       const mode = getIsAuto() ? 'Auto (computed from background hue)' : 'Manual';
       const displayed = getIsAuto() ? computeAutoColors().linkHex : (getColor() || computeAutoColors().linkHex);
       ruleLinkEl.style.color = displayed;
-      preview.title = `${mode}: ${displayed}`;
-      preview.ariaLabel = `${mode} link color: ${displayed}`;
+      const label = `${themeName} theme link color preview. ${mode} color: ${displayed}. Activate to choose a color.`;
+      preview.title = label;
+      preview.setAttribute('aria-label', label);
       if (colorPickerInput) {
         colorPickerInput.value = this.resolveColorForPicker(displayed);
       }
@@ -998,6 +1020,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         if (toggleBtnComponent) {
           toggleBtnComponent.setIcon('sparkles');
           toggleBtnComponent.setTooltip('Switch to auto color');
+          toggleBtnComponent.buttonEl.setAttribute('aria-label', 'Switch to auto color');
         }
       }
       this.queueSave();
@@ -1011,7 +1034,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         updatePreview();
         if (toggleBtnComponent) {
           toggleBtnComponent.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
-          toggleBtnComponent.setTooltip(getIsAuto() ? 'Switch to manual color' : 'Switch to auto color');
+          const tooltip = getIsAuto() ? 'Switch to manual color' : 'Switch to auto color';
+          toggleBtnComponent.setTooltip(tooltip);
+          toggleBtnComponent.buttonEl.setAttribute('aria-label', tooltip);
         }
       });
     }
@@ -1089,6 +1114,10 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       const inputs = settingContainer.querySelectorAll('input[type="color"]');
       colorPickerInput = inputs[inputs.length - 1] as HTMLInputElement | null;
       colorPickerInput?.addClass('page-color-prop-hidden-color-picker');
+      if (colorPickerInput) {
+        colorPickerInput.tabIndex = -1;
+        colorPickerInput.setAttribute('aria-hidden', 'true');
+      }
     });
 
     const openColorPicker = () => {
@@ -1100,7 +1129,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     settingEl.addButton(button => {
       toggleBtnComponent = button;
       button.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
-      button.setTooltip(getIsAuto() ? 'Switch to manual color' : 'Switch to auto color');
+      const tooltip = getIsAuto() ? 'Switch to manual color' : 'Switch to auto color';
+      button.setTooltip(tooltip);
+      button.buttonEl.setAttribute('aria-label', tooltip);
       button.onClick(async () => {
         const nowAuto = !getIsAuto();
         setIsAuto(nowAuto);
@@ -1113,28 +1144,33 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         updatePreview();
         onChanged?.();
         button.setIcon(nowAuto ? 'pipette' : 'sparkles');
-        button.setTooltip(nowAuto ? 'Switch to manual color' : 'Switch to auto color');
+        const nextTooltip = nowAuto ? 'Switch to manual color' : 'Switch to auto color';
+        button.setTooltip(nextTooltip);
+        button.buttonEl.setAttribute('aria-label', nextTooltip);
         if (!nowAuto) openColorPicker();
       });
     });
 
     const themeName: 'Light' | 'Dark' = isLight ? 'Light' : 'Dark';
-    const preview = settingEl.controlEl.createDiv('page-color-prop-link-preview');
+    const preview = settingEl.controlEl.createEl('button', {
+      cls: 'page-color-prop-link-preview',
+      type: 'button'
+    });
     const defaultBg = this.computeColorFromThemeVarsForTheme('var(--background-secondary)', themeName);
     const defaultText = this.computeColorFromThemeVarsForTheme('var(--nav-item-color)', themeName);
     const defaultMutedText = this.computeColorFromThemeVarsForTheme('var(--text-muted)', themeName);
     preview.style.backgroundColor = defaultBg || '';
     preview.style.color = defaultText || '';
 
-    const sampleText = preview.createDiv('page-color-prop-link-preview-sample');
+    const sampleText = preview.createSpan('page-color-prop-link-preview-sample');
     sampleText.setText('Sample UI text');
     sampleText.style.fontWeight = '600';
 
-    const defaultMutedEl = preview.createDiv('page-color-prop-link-preview-sample');
+    const defaultMutedEl = preview.createSpan('page-color-prop-link-preview-sample');
     defaultMutedEl.setText('Muted UI text');
     defaultMutedEl.style.color = defaultMutedText || '';
 
-    const ruleLinkEl = preview.createDiv('page-color-prop-link-preview-sample page-color-prop-link-preview-rule');
+    const ruleLinkEl = preview.createSpan('page-color-prop-link-preview-sample page-color-prop-link-preview-rule');
     ruleLinkEl.setText('Rule link');
     ruleLinkEl.style.fontWeight = '600';
 
@@ -1142,8 +1178,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       const mode = getIsAuto() ? 'Auto (computed from background hue)' : 'Manual';
       const displayed = getIsAuto() ? computeAutoColors().linkHex : (getColor() || computeAutoColors().linkHex);
       ruleLinkEl.style.color = displayed;
-      preview.title = `${mode}: ${displayed}`;
-      preview.ariaLabel = `${mode} link color: ${displayed}`;
+      const label = `${themeName} theme UI link color preview. ${mode} color: ${displayed}. Activate to choose a color.`;
+      preview.title = label;
+      preview.setAttribute('aria-label', label);
       if (colorPickerInput) {
         colorPickerInput.value = this.resolveColorForPicker(displayed);
       }
@@ -1157,6 +1194,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         if (toggleBtnComponent) {
           toggleBtnComponent.setIcon('sparkles');
           toggleBtnComponent.setTooltip('Switch to auto color');
+          toggleBtnComponent.buttonEl.setAttribute('aria-label', 'Switch to auto color');
         }
       }
       this.queueSave();
@@ -1170,7 +1208,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         updatePreview();
         if (toggleBtnComponent) {
           toggleBtnComponent.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
-          toggleBtnComponent.setTooltip(getIsAuto() ? 'Switch to manual color' : 'Switch to auto color');
+          const tooltip = getIsAuto() ? 'Switch to manual color' : 'Switch to auto color';
+          toggleBtnComponent.setTooltip(tooltip);
+          toggleBtnComponent.buttonEl.setAttribute('aria-label', tooltip);
         }
       });
     }
@@ -1181,36 +1221,52 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     group.createEl("div", { text: "Rule base color", cls: "page-color-prop-base-color-label" });
 
-    const swatchRow = group.createDiv("page-color-prop-swatch-group");
-    const swatch = swatchRow.createEl("button", { cls: "page-color-prop-base-swatch", type: "button" });
-    swatch.style.backgroundColor = mapping.baseColor;
-    swatch.setAttribute("aria-label", `Rule base color ${mapping.baseColor}`);
+    group.createEl("p", {
+      cls: "page-color-prop-base-color-helper",
+      text: "Choose the rule's base color. Page tints and links adapt automatically for each theme.",
+    });
 
+    const settingContainer = group.createDiv("page-color-prop-base-color-setting");
+    const setting = new Setting(settingContainer);
+
+    let swatch: HTMLButtonElement | null = null;
     let colorInput: HTMLInputElement | null = null;
-    const setting = new Setting(swatchRow);
-
     setting.addColorPicker(picker => {
       picker.setValue(mapping.baseColor).onChange(async value => {
         mapping.baseColor = value;
-        swatch.style.backgroundColor = value;
+        updateSwatch();
         this.applyRuleChangesImmediately();
         await this.plugin.saveSettings();
         this.refreshUI();
       });
-      const inputs = swatchRow.querySelectorAll("input[type=color]");
+      const inputs = settingContainer.querySelectorAll("input[type=color]");
       colorInput = inputs[inputs.length - 1] as HTMLInputElement;
       colorInput?.addClass("page-color-prop-hidden-color-picker");
+      if (colorInput) {
+        colorInput.tabIndex = -1;
+        colorInput.setAttribute("aria-hidden", "true");
+      }
     });
 
     setting.addButton(button => {
-      button.setIcon('pipette').setTooltip('Pick rule base color').onClick(() => {
-        if (colorInput) this.openColorPickerAtElement(colorInput, swatch);
+      button.setIcon('pipette').setTooltip('Pick rule base color');
+      button.buttonEl.setAttribute('aria-label', 'Pick rule base color');
+      button.onClick(() => {
+        if (colorInput && swatch) this.openColorPickerAtElement(colorInput, swatch);
       });
     });
 
-    group.createEl("p", {
-      cls: "page-color-prop-base-color-helper",
-      text: "Choose the rule's base color. Page tints and links adapt automatically for each theme.",
+    swatch = setting.controlEl.createEl("button", { cls: "page-color-prop-base-swatch", type: "button" });
+    const updateSwatch = () => {
+      if (!swatch) return;
+      const label = `Rule base color ${mapping.baseColor}. Activate to choose a color.`;
+      swatch.style.backgroundColor = mapping.baseColor;
+      swatch.setAttribute("aria-label", label);
+      swatch.title = label;
+    };
+    updateSwatch();
+    swatch.onClickEvent(() => {
+      if (colorInput && swatch) this.openColorPickerAtElement(colorInput, swatch);
     });
   }
 

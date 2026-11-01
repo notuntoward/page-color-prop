@@ -997,6 +997,46 @@ describe('PageColorPropPlugin', () => {
       tab.onunload();
     });
 
+    it('makes color previews keyboard-operable and gives the base swatch a picker action', () => {
+      const plugin = createPlugin();
+      plugin.settings.colorMappings = [mapping()];
+      plugin.saveSettings = vi.fn().mockResolvedValue(undefined);
+      plugin.applyColorsToAllLeaves = vi.fn();
+      plugin.refreshLinkDecorations = vi.fn();
+
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      (tab as any).openColorPickerAtElement = vi.fn();
+      tab.display();
+      document.body.appendChild(tab.containerEl);
+
+      const card = tab.containerEl.querySelector<HTMLElement>('.page-color-prop-mapping-card')!;
+      const previews = Array.from(card.querySelectorAll<HTMLButtonElement>('.page-color-prop-link-preview'));
+      expect(previews.length).toBeGreaterThan(0);
+      for (const preview of previews) {
+        expect(preview.tagName).toBe('BUTTON');
+        expect(preview.type).toBe('button');
+        expect(preview.tabIndex).toBe(0);
+        expect(preview.getAttribute('aria-label')).toMatch(/^(Light|Dark) theme .*link color preview/);
+      }
+
+      const baseGroup = card.querySelector<HTMLElement>('.page-color-prop-base-color-group')!;
+      const basePicker = baseGroup.querySelector<HTMLInputElement>('input[type="color"]')!;
+      const baseSwatch = baseGroup.querySelector<HTMLButtonElement>('.page-color-prop-base-swatch')!;
+      expect(basePicker.tabIndex).toBe(-1);
+      expect(basePicker.getAttribute('aria-hidden')).toBe('true');
+      expect(baseSwatch.getAttribute('aria-label')).toContain('Activate to choose a color');
+
+      previews[0].focus();
+      expect(document.activeElement).toBe(previews[0]);
+      previews[0].click();
+      baseSwatch.click();
+      expect((tab as any).openColorPickerAtElement).toHaveBeenNthCalledWith(1, expect.any(HTMLInputElement), previews[0]);
+      expect((tab as any).openColorPickerAtElement).toHaveBeenNthCalledWith(2, basePicker, baseSwatch);
+
+      tab.onunload();
+      tab.containerEl.remove();
+    });
+
     it('uses shared property icons and row navigation without trapping settings focus', () => {
       const plugin = createPlugin();
       plugin.settings.colorMappings = [mapping({ property: 'tags', value: 'project' })];
