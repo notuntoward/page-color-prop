@@ -243,6 +243,7 @@
 
 .page-color-prop-rule-table th {
   text-align: left;
+  vertical-align: bottom;
   font-size: 0.8em;
   text-transform: uppercase;
   color: var(--text-muted);

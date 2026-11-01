@@ -586,9 +586,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     const headerRow = thead.createEl('tr');
     headerRow.createEl('th', { text: 'Theme' });
     headerRow.createEl('th', { text: 'Background' });
-    headerRow.createEl('th', { text: 'Link' });
+    headerRow.createEl('th', { text: 'Links: uncolored notes' });
     if (showUiColumn) {
-      headerRow.createEl('th', { text: 'UI' });
+      headerRow.createEl('th', { text: 'Links: app UI' });
     }
 
     return table;
