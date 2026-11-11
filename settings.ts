@@ -73,9 +73,9 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   }
 
   public refreshUI(): void {
-    // This tab renders custom setting rows in display(), so refresh through the same
-    // full rebuild path to remove stale rows and dispose their picker instances.
-    this.display();
+    // Re-render the declarative rows, disposing pickers from the previous render.
+    this.runRenderCleanups();
+    this.update();
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
@@ -194,7 +194,8 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         definitions.push({
           name: '',
           render: (setting: Setting) => {
-            return this.createMappingSettings(this.createBlockContainer(setting), mapping, index);
+            const cleanup = this.createMappingSettings(this.createBlockContainer(setting), mapping, index);
+            if (typeof cleanup === 'function') this.renderCleanups.push(cleanup);
           }
         });
       });
@@ -229,35 +230,6 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   }
 
   private renderCleanups: Array<() => void> = [];
-
-  display(): void {
-    const { containerEl } = this;
-    if (!containerEl) return;
-    this.runRenderCleanups();
-    containerEl.empty();
-
-    for (const def of this.getSettingDefinitions()) {
-      const item = def as any;
-      const setting = new Setting(containerEl);
-      if (item.name) setting.setName(item.name);
-      if (item.desc) setting.setDesc(item.desc);
-
-      if (item.control) {
-        if (item.control.type === 'toggle') {
-          setting.addToggle(toggle => {
-            toggle.setValue(Boolean((this.plugin.settings as any)[item.control.key]));
-            toggle.onChange(async val => {
-              (this.plugin.settings as any)[item.control.key] = val;
-              await this.plugin.saveSettings();
-            });
-          });
-        }
-      } else if (item.render) {
-        const cleanup = item.render(setting);
-        if (typeof cleanup === 'function') this.renderCleanups.push(cleanup);
-      }
-    }
-  }
 
   private createBlockContainer(setting: Setting): HTMLElement {
     const settingEl = setting.settingEl;
@@ -816,7 +788,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         .onChange(async value => {
           t.hueStepDegrees = value;
           await this.plugin.saveSettings();
-          this.display();
+          this.refreshUI();
         }));
 
     new Setting(section)
@@ -829,7 +801,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         .onChange(async value => {
           t.minDeltaE = value;
           await this.plugin.saveSettings();
-          this.display();
+          this.refreshUI();
         }));
 
     new Setting(section)
@@ -842,7 +814,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
         .onChange(async value => {
           t.minContrast = value;
           await this.plugin.saveSettings();
-          this.display();
+          this.refreshUI();
         }));
   }
 
