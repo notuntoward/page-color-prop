@@ -56,6 +56,7 @@ export class LinkDecorator {
 	private matchCache = new Map<string, { index: number | null; version: number }>();
 	private linkStyleVersion = 0;
 	private themeVars: ThemeCssVars | null = null;
+	private resolvedLinkColorCache = new WeakMap<PropertyColorMapping, { key: string; color: string }>();
 	private readonly observers: Map<HTMLElement, MutationObserver> = new Map();
 	private readonly observedRoots: WeakSet<Document | HTMLElement> = new WeakSet();
 	/** Document-level observer to catch modal/popup mountings (suggestion popups). */
@@ -70,6 +71,7 @@ export class LinkDecorator {
 	 */
 	public invalidateCaches() {
 		this.matchCache.clear();
+		this.resolvedLinkColorCache = new WeakMap();
 		this.linkStyleVersion++;
 		this.themeVars = readBothThemeVars();
 	}
@@ -156,7 +158,17 @@ export class LinkDecorator {
 		}
 
 		try {
-			return computeAutoRuleColors(
+			const key = JSON.stringify([
+				isLight,
+				themeVars,
+				mapping.baseColor,
+				this.plugin.settings.colorMappings.map(m => m.baseColor),
+				otherHexes,
+				this.plugin.settings.experimentalLinkTuning
+			]);
+			const cached = this.resolvedLinkColorCache.get(mapping);
+			if (cached?.key === key) return cached.color;
+			const color = computeAutoRuleColors(
 				mapping,
 				this.plugin.settings.colorMappings,
 				isLight ? 'Light' : 'Dark',
@@ -164,8 +176,10 @@ export class LinkDecorator {
 				otherHexes,
 				this.plugin.settings.experimentalLinkTuning
 			).linkHex;
+			this.resolvedLinkColorCache.set(mapping, { key, color });
+			return color;
 		} catch (e) {
-			console.error('Page Color Prop: failed to compute auto link color', e);
+			console.error('Page Color Prop: failed to resolve automatic link color', e);
 			return null;
 		}
 	}

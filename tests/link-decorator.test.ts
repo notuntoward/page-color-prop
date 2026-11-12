@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { findMatchingColorMappings, computeAutoLinkHex, readThemeCssVar } from '../link-color-service';
 import { LinkDecorator } from '../link-decorator';
-import { ColorMath } from '../color-optimizer';
+import { ColorMath, ColorOptimizer } from '../color-optimizer';
 import type { PropertyColorMapping } from '../settings';
 
 class MinimalPlugin {
@@ -379,6 +379,109 @@ describe('LinkDecorator', () => {
     const decorator = new LinkDecorator(plugin);
     const color = decorator.getResolvedLinkColor(plugin.settings.colorMappings[0]);
     expect(color).toBe('#ff00ff');
+  });
+
+  it('reuses one automatic color calculation across many matching files and label types', () => {
+    const rule = mapping({ isAutoLinkLight: true, isAutoLinkDark: true });
+    const plugin = makePlugin([rule]);
+    plugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { tags: ['ai-generated'] } });
+    const decorator = new LinkDecorator(plugin);
+    vi.spyOn(decorator as any, 'getThemeVars').mockReturnValue({
+      bo_l: '#ffffff', bo_d: '#1e1e1e', ui_l: '#ffffff', ui_d: '#1e1e1e',
+      to_l: '#2e2e2e', to_d: '#dbdbdb', lo_l: '#2463d1', lo_d: '#58a6ff',
+      nv_l: '#2e2e2e', nv_d: '#dbdbdb', mt_l: '#2e2e2e', mt_d: '#dbdbdb'
+    });
+    const optimizer = vi.spyOn(ColorOptimizer, 'computeRuleColors').mockReturnValue({
+      backgroundHex: '#ffffff', linkHex: '#123456', fallbackUsed: false
+    });
+
+    try {
+      for (let i = 0; i < 100; i++) {
+        const matched = decorator.getMatchingMappingForFile({ path: `note-${i}.md` } as any);
+        expect(matched).toBe(rule);
+        expect(decorator.getResolvedLinkColor(matched!, true)).toBe('#123456');
+        expect(decorator.getResolvedLinkColor(matched!)).toBe('#123456');
+      }
+      expect(optimizer).toHaveBeenCalledTimes(1);
+    } finally {
+      optimizer.mockRestore();
+    }
+  });
+
+  it('updates cached automatic colors when their inputs or theme change', () => {
+    const rule = mapping({ isAutoLinkLight: true, isAutoLinkDark: true });
+    const other = mapping({ id: 'other', baseColor: '#225588' });
+    const plugin = makePlugin([rule, other]);
+    const decorator = new LinkDecorator(plugin);
+    const themeVars = {
+      bo_l: '#ffffff', bo_d: '#1e1e1e', ui_l: '#ffffff', ui_d: '#1e1e1e',
+      to_l: '#2e2e2e', to_d: '#dbdbdb', lo_l: '#2463d1', lo_d: '#58a6ff',
+      nv_l: '#2e2e2e', nv_d: '#dbdbdb', mt_l: '#2e2e2e', mt_d: '#dbdbdb'
+    };
+    vi.spyOn(decorator as any, 'getThemeVars').mockReturnValue(themeVars);
+    let calculations = 0;
+    const optimizer = vi.spyOn(ColorOptimizer, 'computeRuleColors').mockImplementation(() => ({
+      backgroundHex: '#ffffff', linkHex: `#${String(++calculations).padStart(6, '0')}`, fallbackUsed: false
+    }));
+
+    try {
+      expect(decorator.getResolvedLinkColor(rule, true)).toBe('#000001');
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#000001');
+      rule.baseColor = '#ff0000';
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#000002');
+      other.baseColor = '#336699';
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#000003');
+      other.linkColorLight = '#123456';
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#000004');
+      other.isAutoLinkLight = true;
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#000005');
+      plugin.settings.experimentalLinkTuning.minContrast = 6;
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#000006');
+      plugin.isDarkTheme = true;
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#000007');
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#000007');
+      themeVars.bo_d = '#333333';
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#000008');
+      decorator.invalidateCaches();
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#000009');
+      plugin.settings.colorUiLabels = false;
+      expect(decorator.getResolvedLinkColor(rule, true)).toBeNull();
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#000009');
+      other.isAutoLinkDark = true;
+      expect(decorator.getResolvedLinkColor(other)).toBe('#000010');
+      expect(decorator.getResolvedLinkColor(other)).toBe('#000010');
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#000011');
+      expect(optimizer).toHaveBeenCalledTimes(11);
+    } finally {
+      optimizer.mockRestore();
+    }
+  });
+
+  it('retries a failed automatic color calculation without caching the failure', () => {
+    const rule = mapping({ isAutoLinkLight: true });
+    const plugin = makePlugin([rule]);
+    const decorator = new LinkDecorator(plugin);
+    vi.spyOn(decorator as any, 'getThemeVars').mockReturnValue({
+      bo_l: '#ffffff', bo_d: '#1e1e1e', ui_l: '#ffffff', ui_d: '#1e1e1e',
+      to_l: '#2e2e2e', to_d: '#dbdbdb', lo_l: '#2463d1', lo_d: '#58a6ff',
+      nv_l: '#2e2e2e', nv_d: '#dbdbdb', mt_l: '#2e2e2e', mt_d: '#dbdbdb'
+    });
+    const failure = new Error('optimizer failed');
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const optimizer = vi.spyOn(ColorOptimizer, 'computeRuleColors')
+      .mockImplementationOnce(() => { throw failure; })
+      .mockReturnValue({ backgroundHex: '#ffffff', linkHex: '#123456', fallbackUsed: false });
+
+    try {
+      expect(decorator.getResolvedLinkColor(rule)).toBeNull();
+      expect(report).toHaveBeenCalledWith('Page Color Prop: failed to resolve automatic link color', failure);
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#123456');
+      expect(decorator.getResolvedLinkColor(rule)).toBe('#123456');
+      expect(optimizer).toHaveBeenCalledTimes(2);
+    } finally {
+      optimizer.mockRestore();
+      report.mockRestore();
+    }
   });
 
   it('getResolvedLinkColor reads experimentalLinkTuning from settings when in auto mode', () => {
