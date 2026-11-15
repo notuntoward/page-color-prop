@@ -99,6 +99,16 @@
   margin: 0 !important;
 }
 
+.page-color-prop-block-setting-row > .setting-item-info {
+  display: none;
+}
+
+.page-color-prop-block-setting-row > .setting-item-control {
+  display: block;
+  width: 100%;
+  text-align: start;
+}
+
 .page-color-prop-block-setting {
   margin: 0;
   padding: 0;
@@ -156,6 +166,10 @@
   border: 0;
 }
 
+.setting-group .page-color-prop-condition .setting-item:not(.setting-item-heading)::before {
+  content: none;
+}
+
 .page-color-prop-condition .setting-item-info {
   margin: 0;
 }
@@ -172,9 +186,70 @@
   font-size: var(--font-ui-smaller);
 }
 
+@container (min-width: 481px) {
+  .page-color-prop-condition {
+    grid-template-rows: auto minmax(28px, auto) auto auto;
+    row-gap: 4px;
+  }
+
+  .page-color-prop-condition > .setting-item {
+    display: grid;
+    grid-row: 1 / span 4;
+    grid-template-rows: subgrid;
+    gap: 0;
+  }
+
+  .page-color-prop-condition > .setting-item > .setting-item-info {
+    grid-row: 1;
+  }
+
+  .page-color-prop-condition > .setting-item > .setting-item-control {
+    display: grid;
+    grid-row: 2 / span 3;
+    grid-template-rows: subgrid;
+    justify-content: stretch;
+  }
+
+  .page-color-prop-condition > .setting-item:nth-child(2) select {
+    grid-row: 2;
+    align-self: start;
+    justify-self: start;
+  }
+
+  .page-color-prop-condition .commons-property-picker[data-appearance="property"] {
+    display: grid;
+    grid-row: 1 / span 3;
+    grid-template-rows: subgrid;
+    gap: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .page-color-prop-condition .commons-property-picker-selected:not([hidden]) {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: start;
+    align-items: center;
+    gap: 4px;
+    grid-row: 1;
+  }
+
+  .page-color-prop-condition .commons-property-picker-input {
+    grid-row: 2;
+  }
+
+  .page-color-prop-condition .commons-property-picker-status {
+    grid-row: 3;
+  }
+}
+
 @container (max-width: 480px) {
   .page-color-prop-condition {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-color-prop-condition .commons-property-picker input.commons-property-picker-input {
+    flex-basis: 100%;
   }
 }
 

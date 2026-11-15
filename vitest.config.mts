@@ -14,6 +14,7 @@ export default defineConfig({
         replacement: fileURLToPath(new URL('./tests/obsidian.mock.ts', import.meta.url))
       },
       { find: 'commons/properties', replacement: resolve(import.meta.dirname, '../obsidian-commons/src/properties/index.ts') },
+      { find: 'commons/color', replacement: resolve(import.meta.dirname, '../obsidian-commons/src/color/index.ts') },
       { find: 'commons/workspace', replacement: resolve(import.meta.dirname, '../obsidian-commons/src/workspace/index.ts') },
       { find: 'commons/windows', replacement: resolve(import.meta.dirname, '../obsidian-commons/src/windows/index.ts') },
       { find: 'commons/modal', replacement: resolve(import.meta.dirname, '../obsidian-commons/src/modal/index.ts') },

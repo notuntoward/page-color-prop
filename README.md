@@ -32,7 +32,7 @@ Once the plugin is installed, you can create rules (called "mappings") to connec
 3.  Click `+ Add New Mapping` to create your first rule.
 4.  Fill out the fields for the new mapping.
 
-Property and value controls follow Property Porter's shared conventions: property names carry type icons, existing names and values are suggested, and new entries require explicit confirmation. Tags use tag bubbles; other values use plain removable selections. Exact-match rules use native number/date/time editors or checkbox choices when the property has that type. Contains rules keep a text editor so partial matches remain possible. These controls configure rules; they do not create properties or change values in your notes.
+Property and value controls follow Property Porter's shared conventions: property names carry type icons, existing names and values are suggested, and new entries require explicit confirmation. Tags use tag bubbles; other values use plain removable selections. For list properties, select multiple values: Contains matches any selected list entry, while Exact match requires the complete list in any order. Exact-match rules for scalar properties use native number/date/time editors or checkbox choices when the property has that type. Contains rules keep a text editor so partial matches remain possible. These controls configure rules; they do not create properties or change values in your notes.
 
 Each rule groups Property, Match type, and Value into one compact condition row, rather than separate description-heavy settings rows. The fields stack on narrow panels, with a shared hint explaining entry confirmation.
 
@@ -92,8 +92,8 @@ More than one mapping can apply to the same note. For example, a note might have
   * **Property:** The name of the frontmatter key (e.g., `status`, `tags`, `priority`).
   * **Value:** The value you want to match (e.g., `complete`, `hydropower`, `high`).
   * **Match type:**
-      * `Exact match`: The property's value must be *exactly* what you typed.
-      * `Contains`: The property's value (string or array) must *include* what you typed. **Use this for tags\!**
+      * `Exact match`: A scalar property must equal the selected value; a list must contain exactly the selected entries, regardless of order.
+      * `Contains`: A scalar property's text must include the selected value; a list must contain any selected entry exactly. **Use this for tags\!**
   * **Theme backgrounds (light/dark):**
       * **Sample box:** The large square on the left shows a preview of the color.
       * **Mode label:** Tells you if the color is `Auto` or `Manual`.

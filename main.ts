@@ -238,7 +238,8 @@ export default class PageColorPropPlugin extends Plugin {
 		const candidate = mapping as Partial<PropertyColorMapping>;
 		return typeof candidate.id === 'string' && candidate.id.length > 0 &&
 			typeof candidate.property === 'string' &&
-			typeof candidate.value === 'string' &&
+			(typeof candidate.value === 'string' ||
+				(Array.isArray(candidate.value) && candidate.value.every(value => typeof value === 'string'))) &&
 			(candidate.matchType === 'exact' || candidate.matchType === 'contains');
 	}
 

@@ -233,6 +233,20 @@ describe('PageColorPropPlugin', () => {
     expect(plugin.saveSettings).not.toHaveBeenCalled();
   });
 
+  it('reloads multiple selected values without dropping legacy single-value rules', async () => {
+    const plugin = createPlugin();
+    plugin.loadData.mockResolvedValue({
+      colorMappings: [
+        mapping({ value: ['alpha', 'beta'] }),
+        mapping({ id: 'legacy', value: 'single' }),
+        { ...mapping({ id: 'invalid' }), value: ['valid', 42] }
+      ]
+    });
+    await plugin.loadSettings();
+    expect(plugin.settings.colorMappings.map((rule: PropertyColorMapping) => rule.value))
+      .toEqual([['alpha', 'beta'], 'single']);
+  });
+
   it('finds exact, contains, and lowest-priority matches', () => {
     const plugin = createPlugin({
       colorMappings: [
@@ -997,6 +1011,41 @@ describe('PageColorPropPlugin', () => {
       tab.onunload();
     });
 
+    it('replaces rule cards and keeps their pickers usable after repeated base color changes', async () => {
+      const plugin = createPlugin({
+        colorMappings: [
+          mapping({ property: 'category', value: 'literaturenote' }),
+          mapping({ id: 'rule-2', property: 'tags', value: 'journal' })
+        ]
+      });
+      plugin.saveSettings = vi.fn().mockResolvedValue(undefined);
+      plugin.applyColorsToAllLeaves = vi.fn();
+      plugin.refreshLinkDecorations = vi.fn();
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      tab.display();
+
+      for (const color of ['#fefdec', '#abc123']) {
+        const cards = tab.containerEl.querySelectorAll<HTMLElement>('.page-color-prop-mapping-card');
+        expect(cards).toHaveLength(2);
+        const input = cards[0].querySelector<HTMLInputElement>('.page-color-prop-base-color-group input[type="color"]')!;
+        input.value = color;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        await vi.waitFor(() => expect(plugin.settings.colorMappings[0].baseColor).toBe(color));
+        await vi.waitFor(() => expect(tab.containerEl.querySelectorAll('.page-color-prop-mapping-card')).toHaveLength(2));
+      }
+
+      const cards = Array.from(tab.containerEl.querySelectorAll<HTMLElement>('.page-color-prop-mapping-card'));
+      expect(cards.map(card => Array.from(card.querySelectorAll('.commons-property-picker-label'))
+        .map(label => label.textContent))).toEqual([
+        ['category', 'literaturenote'],
+        ['tags', 'journal']
+      ]);
+      cards[0].querySelector<HTMLButtonElement>('button[aria-label="Remove literaturenote"]')!.click();
+      expect(plugin.settings.colorMappings[0].value).toBe('');
+      expect(plugin.settings.colorMappings[1].value).toBe('journal');
+      tab.onunload();
+    });
+
     it('makes color previews keyboard-operable and gives the base swatch a picker action', () => {
       const plugin = createPlugin();
       plugin.settings.colorMappings = [mapping()];
@@ -1092,6 +1141,42 @@ describe('PageColorPropPlugin', () => {
       tab.display();
       expect(tab.containerEl.querySelectorAll<HTMLInputElement>('.commons-property-picker-input')[1].type).toBe('text');
       expect(plugin.settings.colorMappings[0].value).toBe('2026-');
+      tab.onunload();
+    });
+
+    it('selects multiple list values and preserves them when switching to exact matching', () => {
+      const plugin = createPlugin();
+      const file = { path: 'note.md' };
+      plugin.app.vault.getMarkdownFiles.mockReturnValue([file]);
+      const tags = Array.from({ length: 10 }, (_, index) => `tag-${index}`);
+      plugin.app.metadataCache.getFileCache.mockReturnValue({
+        frontmatter: { tags, status: 'open' },
+        tags: tags.map(tag => ({ tag: `#${tag}` }))
+      });
+      plugin.settings.colorMappings = [mapping({ property: 'tags', value: tags[0] })];
+      plugin.saveSettings = vi.fn();
+      plugin.applyColorsToAllLeaves = vi.fn();
+      plugin.refreshLinkDecorations = vi.fn();
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      tab.display();
+
+      const valueInput = tab.containerEl.querySelectorAll<HTMLInputElement>('.commons-property-picker-input')[1];
+      const suggest = AbstractInputSuggest.instances.find(instance => instance.inputEl === valueInput)!;
+      for (const tag of tags.slice(1)) {
+        suggest.select(suggest.suggestions(tag).find((option: any) => option.value === tag));
+      }
+      expect(plugin.settings.colorMappings[0].value).toEqual(tags);
+      const select = tab.containerEl.querySelector<HTMLSelectElement>('.page-color-prop-condition select')!;
+      select.value = 'exact';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(plugin.settings.colorMappings[0].value).toEqual(tags);
+      expect(plugin.findMatchingColorMappings({ tags: [...tags].reverse() }).selected).not.toBeNull();
+      const propertyInput = tab.containerEl.querySelector<HTMLInputElement>('.commons-property-picker-input')!;
+      const propertySuggest = AbstractInputSuggest.instances.find(instance => instance.inputEl === propertyInput)!;
+      propertySuggest.select(propertySuggest.suggestions('status').find((option: any) => option.value === 'status'));
+      expect(plugin.settings.colorMappings[0].value).toEqual(tags);
+      expect(tab.containerEl.querySelector('.page-color-prop-condition-hint')?.textContent)
+        .toContain('For scalar properties, Exact match requires one selected value');
       tab.onunload();
     });
 
@@ -1217,6 +1302,50 @@ describe('PageColorPropPlugin', () => {
       tab.onunload();
     });
 
+    it('upgrades a value picker to list mode when metadata resolves without losing its draft', () => {
+      const plugin = createPlugin();
+      const file = { path: 'note.md' };
+      plugin.settings.colorMappings = [mapping({ property: 'category', value: 'alpha' })];
+      plugin.saveSettings = vi.fn();
+      plugin.applyColorsToAllLeaves = vi.fn();
+      plugin.refreshLinkDecorations = vi.fn();
+      plugin.app.vault.getMarkdownFiles.mockReturnValue([file]);
+      plugin.app.metadataCache.getFileCache.mockReturnValue(null);
+      let resolvedCallback: (() => void) | undefined;
+      plugin.app.metadataCache.on = vi.fn((_eventName, callback) => {
+        resolvedCallback = callback;
+        return {} as any;
+      });
+      const tab = new PageColorPropSettingTab(plugin.app, plugin);
+      tab.display();
+      const popout = document.implementation.createHTMLDocument('popout');
+      popout.body.appendChild(tab.containerEl);
+      const oldInput = tab.containerEl.querySelectorAll<HTMLInputElement>('.commons-property-picker-input')[1];
+      oldInput.value = 'be';
+      const activeElement = Object.getOwnPropertyDescriptor(popout, 'activeElement');
+      Object.defineProperty(popout, 'activeElement', { configurable: true, get: () => oldInput });
+      const focus = vi.spyOn(HTMLInputElement.prototype, 'focus');
+
+      try {
+        plugin.app.metadataCache.getFileCache.mockReturnValue({ frontmatter: { category: ['alpha', 'beta'] } });
+        resolvedCallback?.();
+
+        const newInput = tab.containerEl.querySelectorAll<HTMLInputElement>('.commons-property-picker-input')[1];
+        expect(newInput).not.toBe(oldInput);
+        expect(newInput.ownerDocument).toBe(popout);
+        expect(newInput.value).toBe('be');
+        expect(focus.mock.instances).toContain(newInput);
+        const suggest = AbstractInputSuggest.instances.find(instance => instance.inputEl === newInput)!;
+        suggest.select(suggest.suggestions('beta').find((option: any) => option.value === 'beta'));
+        expect(plugin.settings.colorMappings[0].value).toEqual(['alpha', 'beta']);
+      } finally {
+        focus.mockRestore();
+        if (activeElement) Object.defineProperty(popout, 'activeElement', activeElement);
+        else Reflect.deleteProperty(popout, 'activeElement');
+        tab.onunload();
+      }
+    });
+
     it('refreshes selected-value status when the property or vault metadata changes', () => {
       const plugin = createPlugin();
       const file = { path: 'note.md' };
@@ -1298,10 +1427,10 @@ describe('PageColorPropPlugin', () => {
       expect(work).toBeDefined();
       valueSuggest.select(work);
 
-      expect(plugin.settings.colorMappings[0].value).toBe('work');
+      expect(plugin.settings.colorMappings[0].value).toEqual(['ai-generated', 'work']);
       expect(plugin.applyColorsToAllLeaves).toHaveBeenCalledTimes(2);
       expect(plugin.refreshLinkDecorations).toHaveBeenCalledTimes(2);
-      expect(tab.containerEl.querySelector('.page-color-prop-rule-summary')?.textContent).toBe('category contains work');
+      expect(tab.containerEl.querySelector('.page-color-prop-rule-summary')?.textContent).toBe('category contains ai-generated, work');
 
       const closeCalls = propertySuggest.close.mock.calls.length;
       tab.refreshUI();

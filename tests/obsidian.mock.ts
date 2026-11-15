@@ -57,15 +57,22 @@ export class AbstractInputSuggest<T> {
 }
 export class PluginSettingTab {
   containerEl: any;
+  private rendered = new Map<string, { setting: Setting; cleanup?: () => void }>();
   constructor(public app: any, public plugin: any) {
     this.containerEl = augmentMockEl(document.createElement('div'));
   }
   update() {
     if (this.containerEl && typeof (this as any).getSettingDefinitions === 'function') {
-      this.containerEl.empty();
       const defs = (this as any).getSettingDefinitions();
-      for (const def of defs) {
-        const setting = new Setting(this.containerEl);
+      const previous = this.rendered;
+      this.rendered = new Map();
+      for (const [index, def] of defs.entries()) {
+        const key = def.control ? `control:${def.control.key}` : def.name ? `name:${def.name}` : `item:${index}`;
+        const existing = previous.get(key);
+        const setting = existing?.setting ?? new Setting(this.containerEl);
+        existing?.cleanup?.();
+        if (existing) setting.controlEl.empty();
+        previous.delete(key);
         if (def.name) setting.setName(def.name);
         if (def.desc) setting.setDesc(def.desc);
         if (def.control) {
@@ -75,9 +82,13 @@ export class PluginSettingTab {
             });
           }
         }
-        if (def.render) {
-          def.render(setting);
-        }
+        const cleanup = def.render?.(setting);
+        this.rendered.set(key, { setting, cleanup });
+        this.containerEl.appendChild(setting.settingEl);
+      }
+      for (const { setting, cleanup } of previous.values()) {
+        cleanup?.();
+        setting.settingEl.remove();
       }
     }
   }

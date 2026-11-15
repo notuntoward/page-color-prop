@@ -95,6 +95,35 @@ describe('findMatchingColorMappings', () => {
     expect(result.selected).not.toBeNull();
   });
 
+  it('matches any selected list value for contains and the whole unordered list for exact', () => {
+    const rule = mapping({ value: ['ai-generated', 'research'], matchType: 'contains' });
+    expect(findMatchingColorMappings([rule], { tags: ['research', 'other'] }).selected).not.toBeNull();
+    expect(findMatchingColorMappings([rule], { tags: ['other'] }).selected).toBeNull();
+    rule.matchType = 'exact';
+    expect(findMatchingColorMappings([rule], { tags: ['research', 'ai-generated'] }).selected).not.toBeNull();
+    expect(findMatchingColorMappings([rule], { tags: ['research', 'ai-generated', 'other'] }).selected).toBeNull();
+    expect(findMatchingColorMappings([rule], { tags: ['research'] }).selected).toBeNull();
+  });
+
+  it('does not match an unfinished empty contains rule against scalar properties', () => {
+    expect(findMatchingColorMappings(
+      [mapping({ property: 'title', value: '', matchType: 'contains' })],
+      { title: 'anything' }
+    ).selected).toBeNull();
+  });
+
+  it('keeps scalar number, checkbox, date and text matching intact', () => {
+    const rules = [
+      mapping({ property: 'count', value: '1.0', matchType: 'exact' }),
+      mapping({ property: 'done', value: 'false', matchType: 'exact' }),
+      mapping({ property: 'date', value: '2026-10', matchType: 'contains' }),
+      mapping({ property: 'title', value: 'alpha', matchType: 'contains' })
+    ];
+    expect(findMatchingColorMappings(rules, {
+      count: 1, done: false, date: '2026-10-26', title: 'alpha note'
+    }).matches).toHaveLength(4);
+  });
+
   it('matches contains against scalar strings', () => {
     const result = findMatchingColorMappings(
       [mapping({ property: 'title', value: 'tax', matchType: 'contains' })],

@@ -16,6 +16,7 @@
 // ============================================================================
 
 import { getAllTags, type CachedMetadata, type TFile } from 'obsidian';
+import { matchesPageColorRuleValue } from 'commons/color';
 import { normalizeTag } from 'commons/properties';
 import { ColorOptimizer, DEFAULT_LINK_TUNING, type LinkColorTuning } from './color-optimizer';
 import type { PropertyColorMapping } from './settings';
@@ -325,26 +326,9 @@ export function findMatchingColorMappings(
 
 	mappings.forEach((mapping, index) => {
 		const propertyValue = frontmatter[mapping.property];
-		if (propertyValue === undefined || propertyValue === null) return;
-
-		if (mapping.matchType === 'exact') {
-			if (Array.isArray(propertyValue)) {
-				if (propertyValue.length === 1 && String(propertyValue[0]) === mapping.value) {
-					matches.push({ mapping, index, propertyValue });
-				}
-			} else if (String(propertyValue) === mapping.value) {
-				matches.push({ mapping, index, propertyValue });
-			}
-		} else if (mapping.matchType === 'contains') {
-			if (Array.isArray(propertyValue)) {
-				if (propertyValue.map(String).includes(mapping.value)) {
-					matches.push({ mapping, index, propertyValue });
-				}
-			} else {
-				if (String(propertyValue).includes(mapping.value)) {
-					matches.push({ mapping, index, propertyValue });
-				}
-			}
+		if (propertyValue !== undefined && propertyValue !== null &&
+			matchesPageColorRuleValue(propertyValue, mapping.value, mapping.matchType)) {
+			matches.push({ mapping, index, propertyValue });
 		}
 	});
 

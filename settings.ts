@@ -1,7 +1,7 @@
 import { App, Modal, PluginSettingTab, setIcon, Setting, type SettingDefinitionItem } from 'obsidian';
 import { ownerWindow, requestFrameIn, setTimeoutIn, type CancelTimer } from 'commons/windows';
 import {
-  collectVaultMetadata, navigatePropertyRows,
+  collectVaultMetadata, isListProperty, navigatePropertyRows,
   propertyNamePickerOptions, propertyValuePickerOptions, ValuePicker
 } from 'commons/properties';
 import type PageColorPropPlugin from './main';
@@ -12,7 +12,7 @@ export interface PropertyColorMapping {
   id: string;
   baseColor: string; // NEW — "#RRGGBB", replaces accent-derived hue-rotation logic
   property: string;
-  value: string;
+  value: string | string[];
   colorLight: string;
   colorDark: string;
   isAutoLight: boolean;
@@ -57,6 +57,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   private catalog: ReturnType<typeof collectVaultMetadata> = { properties: [], tags: [] };
   private catalogRefreshRegistered = false;
   private readonly activePickers = new Set<ValuePicker>();
+  private readonly valuePickerRefreshers = new Set<() => void>();
 
   constructor(app: App, plugin: PageColorPropPlugin) {
     super(app, plugin);
@@ -73,8 +74,6 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   }
 
   public refreshUI(): void {
-    // Re-render the declarative rows, disposing pickers from the previous render.
-    this.runRenderCleanups();
     this.update();
   }
 
@@ -83,6 +82,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     if (!this.catalogRefreshRegistered) {
       const ref = this.app.metadataCache.on('resolved', () => {
         this.catalog = collectVaultMetadata(this.app);
+        for (const refresh of this.valuePickerRefreshers) refresh();
         for (const picker of this.activePickers) picker.refresh();
       });
       this.plugin.registerEvent(ref);
@@ -195,7 +195,12 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           name: '',
           render: (setting: Setting) => {
             const cleanup = this.createMappingSettings(this.createBlockContainer(setting), mapping, index);
-            if (typeof cleanup === 'function') this.renderCleanups.push(cleanup);
+            const dispose = () => {
+              if (!this.renderCleanups.delete(dispose)) return;
+              cleanup();
+            };
+            this.renderCleanups.add(dispose);
+            return dispose;
           }
         });
       });
@@ -229,14 +234,12 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     return definitions;
   }
 
-  private renderCleanups: Array<() => void> = [];
+  private renderCleanups = new Set<() => void>();
 
   private createBlockContainer(setting: Setting): HTMLElement {
     const settingEl = setting.settingEl;
     settingEl.addClass('page-color-prop-block-setting-row');
-    setting.infoEl?.remove();
-    setting.controlEl?.remove();
-    return settingEl.createDiv({ cls: 'page-color-prop-block-setting' });
+    return setting.controlEl.createDiv({ cls: 'page-color-prop-block-setting' });
   }
 
   onunload(): void {
@@ -245,7 +248,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   }
 
   private runRenderCleanups(): void {
-    for (const cleanup of this.renderCleanups.splice(0)) cleanup();
+    for (const cleanup of this.renderCleanups) cleanup();
   }
 
   private createEmptyState(containerEl: HTMLElement) {
@@ -341,13 +344,22 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     const mappingSummary = mappingHeader.createSpan('page-color-prop-rule-summary');
     const updateSummary = () => {
       const property = mapping.property || 'property';
-      const value = mapping.value || 'value';
+      const value = Array.isArray(mapping.value) ? mapping.value.join(', ') : mapping.value || 'value';
       mappingSummary.setText(`${property} ${mapping.matchType || 'exact'} ${value}`);
     };
     updateSummary();
 
-    const pickers: ValuePicker[] = [];
     let valuePicker: ValuePicker | null = null;
+    let valuePickerMultiple = false;
+    let conditionHint: HTMLElement | undefined;
+    const updateConditionHint = () => {
+      if (!conditionHint) return;
+      const base = 'Choose existing properties and values, or type to create one. New entries require confirmation. For lists, Contains matches any selected value; Exact match requires the entire list in any order.';
+      const warning = Array.isArray(mapping.value) && !isListProperty(this.catalog, mapping.property)
+        ? ' For scalar properties, Exact match requires one selected value; remove extras or choose a list property.'
+        : '';
+      conditionHint.setText(base + warning);
+    };
     const condition = mappingCard.createDiv('page-color-prop-condition');
     const propertySetting = new Setting(condition)
       .setName('Property');
@@ -363,45 +375,70 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       onChange: values => {
         mapping.property = values[0] ?? '';
         updateValuePicker();
+        updateConditionHint();
         updateSummary();
         this.applyRuleChangesImmediately();
         this.queueSave();
       }
     });
-    pickers.push(propertyPicker);
     this.activePickers.add(propertyPicker);
 
     const valueSetting = new Setting(condition)
       .setName('Value');
     const valueOptions = () => ({
-      ...propertyValuePickerOptions(this.catalog, mapping.property, mapping.value, mapping.matchType === 'contains'),
+      ...propertyValuePickerOptions(this.catalog, mapping.property, Array.isArray(mapping.value) ? mapping.value[0] ?? '' : mapping.value, mapping.matchType === 'contains'),
       suggestions: () => {
-        const options = propertyValuePickerOptions(this.catalog, mapping.property, mapping.value, mapping.matchType === 'contains');
+        const initial = Array.isArray(mapping.value) ? mapping.value[0] ?? '' : mapping.value;
+        const options = propertyValuePickerOptions(this.catalog, mapping.property, initial, mapping.matchType === 'contains');
         return typeof options.suggestions === 'function' ? options.suggestions() : options.suggestions;
       },
       context: () => mapping.property
     });
-    const updateValuePicker = () => valuePicker?.updateOptions(valueOptions());
-    valuePicker = new ValuePicker(this.app, valueSetting.controlEl, {
-      ...valueOptions(),
-      appearance: 'property',
-      classPrefix: 'page-color-prop',
-      context: () => mapping.property,
-      value: mapping.value || '',
-      multiple: false,
-      showSingleValueChip: true,
-      placeholder: 'Value…',
-      ariaLabel: 'Property value to match',
-      onChange: values => {
-        mapping.value = values[0] ?? '';
-        updateSummary();
-        this.applyRuleChangesImmediately();
-        this.queueSave();
+    const updateValuePicker = (preserveInput = false) => {
+      const oldInput = valuePicker?.inputEl;
+      const draft = preserveInput ? oldInput?.value : undefined;
+      const hadFocus = preserveInput && oldInput?.ownerDocument.activeElement === oldInput;
+      const oldType = oldInput?.type;
+      const multiple = isListProperty(this.catalog, mapping.property) || Array.isArray(mapping.value);
+      if (valuePicker && multiple !== valuePickerMultiple) {
+        this.activePickers.delete(valuePicker);
+        valuePicker.destroy();
+        valuePicker = null;
       }
-    });
-    pickers.push(valuePicker);
-    this.activePickers.add(valuePicker);
+      if (valuePicker) {
+        valuePicker.updateOptions({ ...valueOptions(), multiple });
+      } else {
+        valuePickerMultiple = multiple;
+        valuePicker = new ValuePicker(this.app, valueSetting.controlEl, {
+          ...valueOptions(),
+          appearance: 'property',
+          classPrefix: 'page-color-prop',
+          value: mapping.value,
+          multiple,
+          showSingleValueChip: true,
+          placeholder: 'Value…',
+          ariaLabel: 'Property value to match',
+          onChange: values => {
+            mapping.value = values.length > 1 ? values : values[0] ?? '';
+            updateSummary();
+            updateConditionHint();
+            this.applyRuleChangesImmediately();
+            this.queueSave();
+          }
+        });
+        this.activePickers.add(valuePicker);
+      }
+      if (draft !== undefined && valuePicker.inputEl.type === oldType) {
+        valuePicker.inputEl.value = draft;
+      }
+      if (hadFocus && valuePicker.inputEl !== oldInput) valuePicker.inputEl.focus();
+    };
     updateValuePicker();
+    const refreshValuePicker = () => {
+      updateValuePicker(true);
+      updateConditionHint();
+    };
+    this.valuePickerRefreshers.add(refreshValuePicker);
     const stopNavigation = navigatePropertyRows(mappingCard, [propertySetting.settingEl, valueSetting.settingEl]);
 
     const matchSetting = new Setting(condition)
@@ -420,10 +457,8 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           });
       });
     condition.insertBefore(matchSetting.settingEl, valueSetting.settingEl);
-    mappingCard.createDiv({
-      cls: 'page-color-prop-condition-hint',
-      text: 'Choose existing properties and values, or type to create one. New entries require confirmation.'
-    });
+    conditionHint = mappingCard.createDiv({ cls: 'page-color-prop-condition-hint' });
+    updateConditionHint();
 
     this.createBaseColorSetting(mappingCard, mapping);
 
@@ -490,9 +525,12 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     return () => {
       stopNavigation();
-      for (const picker of pickers) {
-        picker.destroy();
-        this.activePickers.delete(picker);
+      this.valuePickerRefreshers.delete(refreshValuePicker);
+      propertyPicker.destroy();
+      this.activePickers.delete(propertyPicker);
+      if (valuePicker) {
+        valuePicker.destroy();
+        this.activePickers.delete(valuePicker);
       }
     };
   }
