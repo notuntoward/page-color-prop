@@ -1,17 +1,28 @@
 # Agent Instructions for page-color-prop
 
+## Task scope and validation
+
+Cache exact instructions per checkout/task; read guides only for changed areas.
+Restore only missing/changed sections after compaction.
+- Docs/instructions-only: text/link/format checks, not application tests/builds,
+  browsers, installs or consumer sweeps. This qualifies completion gates below.
+- Publication-only: reuse green checks/artifacts for unchanged code, dependencies,
+  build inputs AND linked commons; validate unchecked pending source once.
+- Source changes: targeted iteration tests, required final checks once; reuse
+  composite steps and verify their bundle rather than rebundling.
+Keep fresh Git branch/identity/message/hook checks and final remote-tip verification.
+
 ## Shared library: commons
 
-This plugin uses `commons` (repo `obsidian-commons`, normally `C:\Users\scott\repos\obsidian-commons`).
-Window, tab group, tab, pop-out, window-focus and modal-chooser logic (and later color
-logic) comes from `commons/*`. Never reimplement it here and never read Obsidian's
-undocumented fields (`leaf.detached`, `container.win`, `rootSplit`, `tabHeaderEl`,
-`chooser.setSelectedItem`, ...) in this plugin. If commons lacks something or is wrong,
-change commons and tell the user: see the global rule "Obsidian shared library" and
-`obsidian-commons/AGENTS.md`. Rules that moved to commons are enforced by its guardrail
-tests; the rules below are the plugin-specific ones that remain.
+Use commons for workspace/window/tab/focus, per-window timers/clipboard, modal,
+search, geometry, page-color and line-flash helpers; never duplicate its
+undocumented Obsidian adapters in plugin code. For an owned-area change, consult
+the installed module exports and relevant commons guide sections. Change commons
+with a regression test if needed, never a local copy. Docs/publication-only work
+does not require opening the library or rebuilding its consumers.
+Local adoption uses file:../obsidian-commons; obey the library's existing
+commons-adoption branch and explicit-ref/tag-disabled publication rules.
 
-Window resolution (`getOpenWindows`, `ownerWindow`), multi-window DOM event and observer hooking (`forEachWindow`), owner-window animation frames (`requestFrameIn`), and undocumented property access (`getTabHeaderEl`) are imported from `commons/*`.
 
 ## Hard rules for page-color-prop
 
