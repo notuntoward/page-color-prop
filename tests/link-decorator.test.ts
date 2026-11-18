@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { findMatchingColorMappings, computeAutoLinkHex, readThemeCssVar } from '../link-color-service';
+import { findMatchingColorMappings, computeAutoLinkHex, readThemeCssVar, readBothThemeVars } from '../link-color-service';
 import { LinkDecorator } from '../link-decorator';
 import { ColorMath } from '../color-optimizer';
 import type { PropertyColorMapping } from '../settings';
@@ -120,6 +120,61 @@ describe('readThemeCssVar', () => {
 
   it('returns null for an empty / invalid input', () => {
     expect(readThemeCssVar('')).toBeNull();
+    expect(readThemeCssVar(42 as any)).toBeNull();
+    expect(readThemeCssVar('transparent')).toBeNull();
+  });
+
+  it('normalizes rgb and resolved CSS-variable colors', () => {
+    expect(readThemeCssVar('rgb(1, 16, 255)')).toBe('#0110ff');
+    document.body.style.setProperty('--test-color', '#123456');
+    const getComputedStyle = vi.spyOn(window, 'getComputedStyle').mockReturnValue({ color: 'rgb(18, 52, 86)' } as any);
+    expect(readThemeCssVar('var(--test-color)')).toBe('#123456');
+    getComputedStyle.mockRestore();
+  });
+
+  it('returns null when a CSS variable does not resolve to rgb', () => {
+    const getComputedStyle = vi.spyOn(window, 'getComputedStyle').mockReturnValue({ color: 'invalid' } as any);
+    expect(readThemeCssVar('var(--missing-color)')).toBeNull();
+    getComputedStyle.mockRestore();
+  });
+});
+
+describe('readBothThemeVars', () => {
+  it('reads both themes and always restores the original theme class', () => {
+    document.body.style.setProperty('--background-secondary', '#f1f1f1');
+    document.body.style.setProperty('--nav-item-color', '#333333');
+    document.body.style.setProperty('--text-muted', '#666666');
+    const getComputedStyle = vi.spyOn(window, 'getComputedStyle').mockImplementation(() => ({ color: 'rgb(1, 2, 3)' } as any));
+
+    const light = readBothThemeVars();
+    expect(light).not.toBeNull();
+    expect(document.body.classList.contains('theme-light')).toBe(true);
+
+    document.body.classList.add('theme-dark');
+    document.body.classList.remove('theme-light');
+    const dark = readBothThemeVars();
+    expect(dark).not.toBeNull();
+    expect(document.body.classList.contains('theme-dark')).toBe(true);
+    getComputedStyle.mockRestore();
+  });
+
+  it('falls back for optional variables and returns null for missing required colors', () => {
+    document.body.style.setProperty('--background-secondary', '#f1f1f1');
+    const getComputedStyle = vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => {
+      const expression = (element as HTMLElement).style.color;
+      const variable = expression.match(/--[w-]+/)?.[0];
+      const configured = variable && document.body.style.getPropertyValue(variable);
+      return { color: configured ? 'rgb(1, 2, 3)' : 'invalid' } as any;
+    });
+
+    const vars = readBothThemeVars();
+    expect(vars?.nv_l).toBe(vars?.to_l);
+    expect(vars?.mt_l).toBe(vars?.to_l);
+
+    document.body.style.removeProperty('--background-primary');
+    expect(readBothThemeVars()).toBeNull();
+    expect(document.body.classList.contains('theme-light')).toBe(true);
+    getComputedStyle.mockRestore();
   });
 });
 
@@ -257,7 +312,10 @@ describe('LinkDecorator', () => {
     const plugin = makePlugin();
     plugin.app.metadataCache.getFileCache.mockReturnValue(null);
     const decorator = new LinkDecorator(plugin);
-    expect(decorator.getMatchingMappingForFile({ path: 'note.md' } as any)).toBeNull();
+    const file = { path: 'note.md' } as any;
+    expect(decorator.getMatchingMappingForFile(file)).toBeNull();
+    expect(decorator.getMatchingMappingForFile(file)).toBeNull();
+    expect(plugin.app.metadataCache.getFileCache).toHaveBeenCalledOnce();
   });
 
   it('returns the matching mapping for a file with matching frontmatter', () => {
