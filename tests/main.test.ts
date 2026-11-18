@@ -186,6 +186,65 @@ describe('PageColorPropPlugin', () => {
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
 
+  it('unloads safely before optional observers are installed', () => {
+    const plugin: any = createPlugin();
+    plugin.removeAllStyles = vi.fn();
+    plugin.clearPendingRetries = vi.fn();
+
+    expect(() => plugin.onunload()).not.toThrow();
+    expect(plugin.removeAllStyles).toHaveBeenCalledOnce();
+    expect(plugin.clearPendingRetries).toHaveBeenCalledOnce();
+  });
+
+  it('installs and disposes optional workspace observers', () => {
+    const plugin: any = createPlugin();
+    plugin.removeAllStyles = vi.fn();
+    plugin.clearPendingRetries = vi.fn();
+
+    plugin.installFileExplorerObserver();
+    expect(plugin.fileExplorerObserver).toBeUndefined();
+
+    const nav = document.createElement('div');
+    nav.className = 'nav-files-container';
+    document.body.appendChild(nav);
+    plugin.installFileExplorerObserver();
+    const fileObserver = plugin.fileExplorerObserver;
+    expect(fileObserver).toBeDefined();
+
+    plugin.themeObserver = { disconnect: vi.fn() };
+    plugin.linkDecorator = { dispose: vi.fn() };
+    const fileDisconnect = vi.spyOn(fileObserver, 'disconnect');
+
+    plugin.onunload();
+
+    expect(plugin.removeAllStyles).toHaveBeenCalledOnce();
+    expect(plugin.clearPendingRetries).toHaveBeenCalledOnce();
+    expect(plugin.themeObserver.disconnect).toHaveBeenCalledOnce();
+    expect(fileDisconnect).toHaveBeenCalledOnce();
+    expect(plugin.linkDecorator).toBeNull();
+  });
+
+  it('observes supported view containers only when a link decorator exists', () => {
+    const plugin: any = createPlugin();
+    plugin.installViewObservers();
+
+    const selectors = [
+      'file-explorer', 'backlink', 'outgoing-link', 'search', 'bookmarks',
+      'starred', 'recent-files', 'file-properties'
+    ];
+    for (const type of selectors) {
+      const container = document.createElement('div');
+      container.className = 'workspace-leaf-content';
+      container.dataset.type = type;
+      document.body.appendChild(container);
+    }
+
+    const observeContainer = vi.fn();
+    plugin.linkDecorator = { observeContainer };
+    plugin.installViewObservers();
+    expect(observeContainer).toHaveBeenCalledTimes(selectors.length);
+  });
+
   it('drops legacy color mappings that lack a stable id', async () => {
     // Per the accent-relative palette change, mappings without an `id`
     // are intentionally treated as invalid. The user must recreate them
