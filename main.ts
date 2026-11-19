@@ -1,6 +1,7 @@
 import { getTabHeaderEl } from 'commons/internals';
 import { forEachWindow, setTimeoutIn, type CancelTimer } from 'commons/windows';
 import { getOpenWindows } from 'commons/workspace';
+import type { EditorView } from '@codemirror/view';
 import { FileView, MarkdownView, Notice, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
 import {
 	PageColorPropSettings,
@@ -11,20 +12,21 @@ import {
 } from './settings';
 import { DEFAULT_LINK_TUNING } from './color-optimizer';
 import { LinkDecorator } from './link-decorator';
-import { computeAutoRuleColors, findMatchingColorMappings, getRuleMatchProperties } from './link-color-service';
+import {
+	computeAutoRuleColors,
+	findMatchingColorMappings,
+	getRuleMatchProperties,
+	type ColorMappingMatch,
+	type Frontmatter
+} from './link-color-service';
 import { buildPageColorPropLivePreviewExtension, forceRecomputeEffect } from './live-preview-links';
-
-type FrontmatterValue = string | number | boolean | null | undefined | FrontmatterValue[];
-type Frontmatter = Record<string, FrontmatterValue>;
-
-interface ColorMappingMatch {
-	mapping: PropertyColorMapping;
-	index: number;
-	propertyValue: FrontmatterValue;
-}
 
 interface LegacyPropertyColorMapping extends Partial<PropertyColorMapping> {
 	color?: string;
+}
+
+interface LegacyPageColorPropSettings extends Partial<PageColorPropSettings> {
+	colorTabText?: boolean;
 }
 
 export default class PageColorPropPlugin extends Plugin {
@@ -44,11 +46,11 @@ export default class PageColorPropPlugin extends Plugin {
 
 		// Register events
 		this.registerEvent(
-			this.app.workspace.on('active-leaf-change', this.onActiveLeafChange.bind(this))
+			this.app.workspace.on('active-leaf-change', leaf => this.onActiveLeafChange(leaf))
 		);
 
 		this.registerEvent(
-			this.app.metadataCache.on('changed', this.onMetadataChanged.bind(this))
+			this.app.metadataCache.on('changed', file => this.onMetadataChanged(file))
 		);
 
 		this.registerEvent(
@@ -61,11 +63,11 @@ export default class PageColorPropPlugin extends Plugin {
 		);
 
 		this.registerEvent(
-			this.app.workspace.on('layout-change', this.onLayoutChange.bind(this))
+			this.app.workspace.on('layout-change', () => this.onLayoutChange())
 		);
 
 		this.registerEvent(
-			this.app.workspace.on('file-open', this.onFileOpen.bind(this))
+			this.app.workspace.on('file-open', () => this.onFileOpen())
 		);
 
 		// Initialize theme state
@@ -192,7 +194,7 @@ export default class PageColorPropPlugin extends Plugin {
 		const version = ++this.linkDecoratorVersion;
 		for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
 			if (!(leaf.view instanceof MarkdownView)) continue;
-			const cmView = (leaf.view.editor as any)?.cm;
+			const cmView = (leaf.view.editor as unknown as { cm?: EditorView }).cm;
 			if (cmView && typeof cmView.dispatch === 'function') {
 				cmView.dispatch({ effects: forceRecomputeEffect.of(version) });
 			}
@@ -215,15 +217,15 @@ export default class PageColorPropPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		const loadedData = await this.loadData() as Partial<PageColorPropSettings> | null;
+		const loadedData = await this.loadData() as LegacyPageColorPropSettings | null;
 
 		if (!loadedData || !Array.isArray(loadedData.colorMappings)) {
 			this.settings = { ...DEFAULT_SETTINGS, colorMappings: [] };
 		} else {
 			this.settings = {
-				colorMappings: loadedData.colorMappings.filter(this.isValidMapping),
+				colorMappings: loadedData.colorMappings.filter(mapping => this.isValidMapping(mapping)),
 				notifyOnMultipleMatches: loadedData.notifyOnMultipleMatches ?? DEFAULT_SETTINGS.notifyOnMultipleMatches,
-				colorUiLabels: loadedData.colorUiLabels ?? (loadedData as any).colorTabText ?? DEFAULT_SETTINGS.colorUiLabels,
+				colorUiLabels: loadedData.colorUiLabels ?? loadedData.colorTabText ?? DEFAULT_SETTINGS.colorUiLabels,
 				colorLinks: loadedData.colorLinks ?? DEFAULT_SETTINGS.colorLinks,
 				experimentalLinkTuning: { ...DEFAULT_LINK_TUNING }
 			};
@@ -337,7 +339,7 @@ export default class PageColorPropPlugin extends Plugin {
 		}
 
 		if (needsSave) {
-			this.saveSettings();
+			void this.saveSettings();
 		}
 	}
 
@@ -555,10 +557,7 @@ export default class PageColorPropPlugin extends Plugin {
 	}
 
 	private findMatchingColorMappings(frontmatter: Frontmatter): { selected: ColorMappingMatch | null; matches: ColorMappingMatch[] } {
-		return findMatchingColorMappings(this.settings.colorMappings, frontmatter) as {
-			selected: ColorMappingMatch | null;
-			matches: ColorMappingMatch[];
-		};
+		return findMatchingColorMappings(this.settings.colorMappings, frontmatter);
 	}
 
 	private notifyIfMultipleMappingsMatch(file: TFile, matches: ColorMappingMatch[]) {
@@ -571,7 +570,12 @@ export default class PageColorPropPlugin extends Plugin {
 		this.multipleMatchNoticeKeys.add(noticeKey);
 		const selectedMatch = matches[matches.length - 1];
 		const matchedRules = matches
-			.map(match => `#${match.index + 1} ${match.mapping.property} ${match.mapping.matchType} ${match.mapping.value}`)
+			.map(match => {
+				const value = Array.isArray(match.mapping.value)
+					? match.mapping.value.join(', ')
+					: match.mapping.value;
+				return `#${match.index + 1} ${match.mapping.property} ${match.mapping.matchType} ${value}`;
+			})
 			.join('; ');
 
 		new Notice(

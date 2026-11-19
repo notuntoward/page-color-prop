@@ -27,6 +27,16 @@ Element.prototype.removeClass = function removeClass(className: string) {
   return this;
 };
 
+Element.prototype.hasClass = function hasClass(className: string) {
+  return this.classList.contains(className);
+};
+
+HTMLElement.prototype.setCssProps = function setCssProps(properties: Record<string, string>) {
+  for (const [property, value] of Object.entries(properties)) {
+    this.style.setProperty(property, value);
+  }
+};
+
 Element.prototype.instanceOf = function instanceOf<T>(constructor: new (...args: any[]) => T): this is T {
   return this instanceof constructor;
 };

@@ -126,6 +126,11 @@ function augmentMockEl(el: any): any {
   el.appendText = vi.fn((t: string) => { el.textContent = (el.textContent || '') + t; });
   el.addClass = vi.fn((c: string) => el.classList.add(c));
   el.removeClass = vi.fn((c: string) => el.classList.remove(c));
+  el.setCssProps = vi.fn((props: Record<string, string>) => {
+    for (const [property, value] of Object.entries(props)) {
+      el.style.setProperty(property, value);
+    }
+  });
   el.setAttr = vi.fn();
   el.onClickEvent = vi.fn((callback: (event: MouseEvent) => void) => {
     el.addEventListener('click', callback);
@@ -217,6 +222,7 @@ export class Setting {
       setButtonText: vi.fn().mockReturnThis(),
       setCta: vi.fn().mockReturnThis(),
       setWarning: vi.fn().mockReturnThis(),
+      setDestructive: vi.fn().mockReturnThis(),
       setIcon: vi.fn().mockReturnThis(),
       setTooltip: vi.fn().mockReturnThis(),
       onClick: vi.fn((callback: (event: MouseEvent) => void) => {

@@ -92,6 +92,14 @@
   transition: background-color 0.2s ease-in-out;
 }
 
+.page-color-prop-color-probe {
+  position: absolute;
+  left: -9999px;
+  top: -9999px;
+  visibility: hidden;
+  color: var(--page-color-prop-probe-color);
+}
+
 .setting-item.page-color-prop-block-setting-row {
   display: block !important;
   border-top: none !important;
@@ -457,6 +465,19 @@
   outline: none;
 }
 
+.page-color-prop-color-picker-open {
+  position: fixed;
+  left: var(--page-color-prop-color-picker-left);
+  top: var(--page-color-prop-color-picker-top);
+  width: var(--page-color-prop-color-picker-width);
+  height: var(--page-color-prop-color-picker-height);
+  z-index: 1;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  pointer-events: auto;
+}
+
 /* Live preview swatch for the link color. Renders on the theme's real
    (untouched) page background with three stacked text samples: body text,
    the theme's default link, and this rule's link color. Lets the user
@@ -498,6 +519,10 @@
   font-weight: inherit;
   text-decoration: inherit;
   font-family: inherit;
+}
+
+.page-color-prop-link-preview-emphasis {
+  font-weight: 600;
 }
 
 .page-color-prop-link-preview-rule {

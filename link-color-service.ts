@@ -15,7 +15,6 @@
 //     (or null if nothing matches).
 // ============================================================================
 
-import type { TFile } from 'obsidian';
 import {
   getPageColorRuleProperties,
   matchesPageColorRuleValue,
@@ -120,11 +119,8 @@ export function readThemeCssVar(colorStr: string, doc: Document = activeDocument
 	const win = doc.defaultView;
 	if (!doc.body || !win) return null;
 	const temp = doc.createElement('div');
-	temp.style.position = 'absolute';
-	temp.style.left = '-9999px';
-	temp.style.top = '-9999px';
-	temp.style.visibility = 'hidden';
-	temp.style.color = colorStr;
+	temp.addClass('page-color-prop-color-probe');
+	temp.setCssProps({ '--page-color-prop-probe-color': colorStr });
 	doc.body.appendChild(temp);
 
 	let computed: string;

@@ -1,4 +1,4 @@
-import { App, Modal, PluginSettingTab, setIcon, Setting, type SettingDefinitionItem } from 'obsidian';
+import { App, Modal, PluginSettingTab, setIcon, Setting, type ButtonComponent, type SettingDefinitionItem } from 'obsidian';
 import { ownerWindow, requestFrameIn, setTimeoutIn, type CancelTimer } from 'commons/windows';
 import {
   collectVaultMetadata, isListProperty, navigatePropertyRows,
@@ -65,11 +65,13 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   }
 
   override getControlValue(key: string): unknown {
-    return (this.plugin.settings as any)[key];
+    const settings = this.plugin.settings as unknown as Record<string, unknown>;
+    return settings[key];
   }
 
   override async setControlValue(key: string, value: unknown): Promise<void> {
-    (this.plugin.settings as any)[key] = value;
+    const settings = this.plugin.settings as unknown as Record<string, unknown>;
+    settings[key] = value;
     await this.plugin.saveSettings();
   }
 
@@ -183,7 +185,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
             cls: 'page-color-prop-rule-priority-note',
             text: 'Rule priority: if multiple rules match a note, the lowest matching rule below sets the background. Use Move up and Move down to reorder.'
           });
-          blockEl.createEl('div', {
+          blockEl.createDiv({
             text: `Color mappings (${this.plugin.settings.colorMappings.length})`,
             cls: 'page-color-prop-group-heading'
           });
@@ -212,7 +214,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
           setting.addButton(button => {
             button
               .setButtonText('Clear all')
-              .setWarning()
+              .setDestructive()
               .onClick(async () => {
                 const confirmed = await ConfirmModal.confirm(
                   this.app,
@@ -304,7 +306,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       // First change in a sequence: save immediately so the UI refreshes
       // right away (e.g., when dragging a color picker).
       this.pendingSave = false;
-      this.plugin.saveSettings();
+      void this.plugin.saveSettings();
     } else {
       // Subsequent change: mark that we still need a final trailing save.
       this.pendingSave = true;
@@ -314,7 +316,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     const win = ownerWindow(this.containerEl) ?? activeWindow;
     this.saveTimeout = setTimeoutIn(win, () => {
       if (this.pendingSave) {
-        this.plugin.saveSettings();
+        void this.plugin.saveSettings();
       }
       this.saveTimeout = undefined;
       this.pendingSave = false;
@@ -326,7 +328,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     this.saveTimeout = undefined;
     if (this.pendingSave) {
       this.pendingSave = false;
-      this.plugin.saveSettings();
+      void this.plugin.saveSettings();
     }
   }
 
@@ -453,7 +455,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
             updateValuePicker();
             updateSummary();
             this.applyRuleChangesImmediately();
-            this.plugin.saveSettings();
+            void this.plugin.saveSettings();
           });
       });
     condition.insertBefore(matchSetting.settingEl, valueSetting.settingEl);
@@ -571,7 +573,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     btn.setAttribute('aria-label', label);
     btn.setAttribute('title', label);
     btn.onclick = () => {
-      if (!btn.disabled) onClick();
+      if (!btn.disabled) void onClick();
     };
     return btn;
   }
@@ -642,10 +644,6 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     compact = false
   ) {
     const isLight = themeType === 'Light';
-    const autoDefault = isLight
-      ? DEFAULT_LIGHT_AUTO_COLOR
-      : DEFAULT_DARK_AUTO_COLOR;
-
     const colorSettingContainer = containerEl.createDiv('page-color-prop-color-setting-container');
     const settingEl = new Setting(colorSettingContainer);
     if (!compact) {
@@ -750,7 +748,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     // Icon-toggle button — shows the ACTION available, not the current state
     // (per spec section 1).  pipette = currently Auto, click to switch to
     // manual picking.  sparkles = currently Manual, click to switch to Auto.
-    let toggleBtnComponent: any = null;
+    let toggleBtnComponent: ButtonComponent | null = null;
     settingEl.addButton(button => {
       toggleBtnComponent = button;
       button.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
@@ -822,7 +820,6 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       .addSlider(slider => slider
         .setLimits(5, 60, 1)
         .setValue(t.hueStepDegrees)
-        .setDynamicTooltip()
         .onChange(async value => {
           t.hueStepDegrees = value;
           await this.plugin.saveSettings();
@@ -835,7 +832,6 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       .addSlider(slider => slider
         .setLimits(0.02, 0.30, 0.01)
         .setValue(t.minDeltaE)
-        .setDynamicTooltip()
         .onChange(async value => {
           t.minDeltaE = value;
           await this.plugin.saveSettings();
@@ -848,7 +844,6 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       .addSlider(slider => slider
         .setLimits(3.0, 7.0, 0.1)
         .setValue(t.minContrast)
-        .setDynamicTooltip()
         .onChange(async value => {
           t.minContrast = value;
           await this.plugin.saveSettings();
@@ -958,7 +953,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     // Icon-toggle button: shows the ACTION available (per spec section 1).
     //   currently Auto  -> pipette icon (click to switch to manual)
     //   currently Manual -> sparkles icon (click to switch to auto)
-    let toggleBtnComponent: any = null;
+    let toggleBtnComponent: ButtonComponent | null = null;
     settingEl.addButton(button => {
       toggleBtnComponent = button;
       button.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
@@ -1135,7 +1130,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
       this.openColorPickerAtElement(colorPickerInput, preview);
     };
 
-    let toggleBtnComponent: any = null;
+    let toggleBtnComponent: ButtonComponent | null = null;
     settingEl.addButton(button => {
       toggleBtnComponent = button;
       button.setIcon(getIsAuto() ? 'pipette' : 'sparkles');
@@ -1174,7 +1169,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     const sampleText = preview.createSpan('page-color-prop-link-preview-sample');
     sampleText.setText('Sample UI text');
-    sampleText.style.fontWeight = '600';
+    sampleText.addClass('page-color-prop-link-preview-emphasis');
 
     const defaultMutedEl = preview.createSpan('page-color-prop-link-preview-sample');
     defaultMutedEl.setText('Muted UI text');
@@ -1182,7 +1177,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
 
     const ruleLinkEl = preview.createSpan('page-color-prop-link-preview-sample page-color-prop-link-preview-rule');
     ruleLinkEl.setText('Rule link');
-    ruleLinkEl.style.fontWeight = '600';
+    ruleLinkEl.addClass('page-color-prop-link-preview-emphasis');
 
     const updatePreview = () => {
       const mode = getIsAuto() ? 'Auto (computed from background hue)' : 'Manual';
@@ -1229,7 +1224,7 @@ export class PageColorPropSettingTab extends PluginSettingTab {
   private createBaseColorSetting(containerEl: HTMLElement, mapping: PropertyColorMapping): void {
     const group = containerEl.createDiv("page-color-prop-base-color-group");
 
-    group.createEl("div", { text: "Rule base color", cls: "page-color-prop-base-color-label" });
+    group.createDiv({ text: "Rule base color", cls: "page-color-prop-base-color-label" });
 
     group.createEl("p", {
       cls: "page-color-prop-base-color-helper",
@@ -1401,52 +1396,51 @@ export class PageColorPropSettingTab extends PluginSettingTab {
     anchor: HTMLElement
   ): void {
     const rect = anchor.getBoundingClientRect();
-    const prevStyles = {
-      position: input.style.position,
-      left: input.style.left,
-      top: input.style.top,
-      width: input.style.width,
-      height: input.style.height,
-      zIndex: input.style.zIndex,
-      padding: input.style.padding,
-      border: input.style.border,
-      opacity: input.style.opacity,
-      pointerEvents: input.style.pointerEvents
-    };
-
+    const pickerProperties = [
+      '--page-color-prop-color-picker-left',
+      '--page-color-prop-color-picker-top',
+      '--page-color-prop-color-picker-width',
+      '--page-color-prop-color-picker-height'
+    ];
+    const previousProperties: Record<string, string> = {};
+    for (const property of pickerProperties) {
+      previousProperties[property] = input.style.getPropertyValue(property);
+    }
+    const hadOpenClass = input.hasClass('page-color-prop-color-picker-open');
     const restoreStyles = () => {
-      input.style.position = prevStyles.position;
-      input.style.left = prevStyles.left;
-      input.style.top = prevStyles.top;
-      input.style.width = prevStyles.width;
-      input.style.height = prevStyles.height;
-      input.style.zIndex = prevStyles.zIndex;
-      input.style.padding = prevStyles.padding;
-      input.style.border = prevStyles.border;
-      input.style.opacity = prevStyles.opacity;
-      input.style.pointerEvents = prevStyles.pointerEvents;
+      input.removeClass('page-color-prop-color-picker-open');
+      if (hadOpenClass) input.addClass('page-color-prop-color-picker-open');
+      const restoredProperties: Record<string, string> = {};
+      for (const property of pickerProperties) {
+        const previous = previousProperties[property];
+        if (previous) {
+          restoredProperties[property] = previous;
+        } else {
+          input.style.removeProperty(property);
+        }
+      }
+      input.setCssProps(restoredProperties);
     };
 
-    input.style.position = 'fixed';
-    input.style.left = `${rect.left}px`;
-    input.style.top = `${rect.top}px`;
-    input.style.width = `${rect.width}px`;
-    input.style.height = `${rect.height}px`;
-    input.style.zIndex = '1';
-    input.style.padding = '0';
-    input.style.border = 'none';
-    input.style.opacity = '0';
-    input.style.pointerEvents = 'auto';
+    input.addClass('page-color-prop-color-picker-open');
+    input.setCssProps({
+      '--page-color-prop-color-picker-left': `${rect.left}px`,
+      '--page-color-prop-color-picker-top': `${rect.top}px`,
+      '--page-color-prop-color-picker-width': `${rect.width}px`,
+      '--page-color-prop-color-picker-height': `${rect.height}px`
+    });
 
+    let pickerOpened = false;
     try {
-      if ('showPicker' in input) {
-        (input as any).showPicker();
+      const showPicker = (input as HTMLInputElement & { showPicker?: () => void }).showPicker;
+      if (showPicker) {
+        showPicker.call(input);
       } else {
-        (input as any).click();
+        input.click();
       }
-    } catch (err) {
-      restoreStyles();
-      throw err;
+      pickerOpened = true;
+    } finally {
+      if (!pickerOpened) restoreStyles();
     }
 
     const win = ownerWindow(input) ?? activeWindow;
@@ -1491,7 +1485,7 @@ class ConfirmModal extends Modal {
         .onClick(() => this.close()))
       .addButton(button => button
         .setButtonText(this.confirmText)
-        .setWarning()
+        .setDestructive()
         .onClick(() => {
           this.confirmed = true;
           this.close();

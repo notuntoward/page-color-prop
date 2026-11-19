@@ -26,7 +26,6 @@
 
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, ViewUpdate } from '@codemirror/view';
 import { RangeSetBuilder, StateEffect, type Extension } from '@codemirror/state';
-import type { TFile } from 'obsidian';
 import type PageColorPropPlugin from './main';
 
 const WIKILINK_RE = /\[\[([^\]\n]+?)\]\]/g;
@@ -106,7 +105,7 @@ export function buildPageColorPropLivePreviewExtension(plugin: PageColorPropPlug
 			if (!decorator) return null;
 			// Skip names that look like URLs.
 			if (/^[a-z]+:\/\//i.test(name)) return null;
-			const target = plugin.app.metadataCache.getFirstLinkpathDest(name, sourcePath) as TFile | null;
+			const target = plugin.app.metadataCache.getFirstLinkpathDest(name, sourcePath);
 			if (!target) return null;
 			const mapping = decorator.getMatchingMappingForFile(target);
 			if (!mapping) return null;

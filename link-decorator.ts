@@ -393,7 +393,7 @@ export class LinkDecorator {
 	public refreshAllVisible(): void {
 		// Reading-view internal links in markdown panes.
 		this.app.workspace.getLeavesOfType('markdown').forEach((leaf) => {
-			const view = (leaf as any).view;
+			const view = leaf.view;
 			if (view && view.containerEl.instanceOf(HTMLElement)) {
 				// The reading view's content is a child; we don't know sourcePath
 				// here without inspecting the leaf's file. The postprocessor
